@@ -1,0 +1,47 @@
+{
+  "name": "auto-social-minh-dien",
+  "version": "0.1.0",
+  "description": "Windows app: local product folders -> AI captions -> scheduled Facebook personal-profile posting via browser automation",
+  "main": "dist/main.js",
+  "author": "Minh Dien",
+  "license": "MIT",
+  "scripts": {
+    "dev": "npm run build:ts && electron .",
+    "build:ts": "tsc",
+    "build": "npm run build:ts && electron-builder --win nsis",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.8.1",
+    "playwright-core": "^1.55.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.2",
+    "electron": "^38.1.2",
+    "electron-builder": "^26.0.12",
+    "typescript": "^5.9.2"
+  },
+  "build": {
+    "appId": "vn.minhdien.autosocial",
+    "productName": "Auto Social Minh Dien",
+    "asar": true,
+    "files": [
+      "dist/**/*",
+      "renderer/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": ["nsis"]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**/*"
+    ]
+  }
+}
