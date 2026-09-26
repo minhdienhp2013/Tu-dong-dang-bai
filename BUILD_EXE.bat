@@ -6,10 +6,12 @@ echo AUTO SOCIAL MINH DIEN - BUILD .EXE
 echo ========================================
 call npm install
 if errorlevel 1 goto :fail
+call npm run build:ts
+if errorlevel 1 goto :fail
 call npm run build
 if errorlevel 1 goto :fail
 echo.
-echo XONG. Kiem tra file cai dat trong thu muc dist\
+echo XONG. Kiem tra file cai dat trong thu muc release\
 pause
 exit /b 0
 :fail
