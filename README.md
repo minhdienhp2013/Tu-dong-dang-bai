@@ -117,3 +117,46 @@ SQLite và config nằm trong `app.getPath('userData')` của Electron. Ảnh v�
 - Khóa chạy để không đăng trùng khi ứng dụng mở hai phiên.
 - Thông báo Windows khi đăng thành công/thất bại.
 - Bộ selector Facebook cập nhật từ file cấu hình để sửa mà không cần build lại app.
+
+
+---
+
+## Content Manager V1 — quản lý tất cả trong một phần mềm
+
+Nhánh `feat/content-manager-v1` bổ sung luồng quản lý nội dung tập trung:
+
+- **Danh mục và mục con**: cây danh mục nhiều cấp.
+- **Sản phẩm**: tên, mô tả, thông tin được phép dùng khi AI viết, hashtag mặc định, trạng thái hoạt động.
+- **Ảnh sản phẩm**: thêm nhiều ảnh từ máy; mỗi ảnh có ghi chú riêng; theo dõi số lần ảnh đã được dùng.
+- **Nội dung AI**: tạo title + caption + hashtag từ thông tin sản phẩm và ghi chú ảnh; không cho AI tự bịa dữ kiện.
+- **Nội dung thủ công**: lưu cùng kho với nội dung AI; trạng thái nháp / đã duyệt / đã dùng.
+- **Lịch Facebook**: chọn sản phẩm + nội dung + ảnh + thời gian cụ thể; có thể tạo nháp hoặc đăng ngay.
+- **Trạng thái đăng**: draft / scheduled / posting / posted / failed / cancelled.
+- **Lịch sử**: thời gian, trạng thái, lỗi và số lần thử.
+- **Facebook**: vẫn dùng Chrome profile riêng và browser automation; CAPTCHA/checkpoint phải xử lý thủ công.
+
+### Quy trình sử dụng mới
+
+```text
+Danh mục
+  ↓
+Sản phẩm
+  ↓
+Ảnh + ghi chú từng ảnh
+  ↓
+AI tạo nội dung / viết thủ công
+  ↓
+Duyệt nội dung
+  ↓
+Chọn ảnh + đặt lịch
+  ↓
+Facebook
+  ↓
+Lịch sử + trạng thái
+```
+
+Dữ liệu quản lý được lưu trong SQLite local của ứng dụng. File ảnh gốc vẫn nằm trên máy người dùng; khi xóa ảnh khỏi phần mềm, app chỉ xóa bản ghi quản lý chứ không xóa file ảnh gốc.
+
+### Lưu ý chạy lịch
+
+Lịch đăng được kiểm tra định kỳ khi ứng dụng đang mở. Bài tới giờ chuyển sang `posting`, sau đó thành `posted` hoặc `failed`. App không retry vô hạn để tránh đăng trùng. Bài lỗi có thể được bấm **Đăng ngay** lại sau khi người dùng xử lý nguyên nhân.
