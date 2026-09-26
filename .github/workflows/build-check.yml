@@ -7,13 +7,16 @@ on:
     branches: [main]
 
 jobs:
-  typecheck:
+  windows-build:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-      - run: npm install
-      - run: npm run build:ts
+      - name: Install dependencies
+        run: npm install
+      - name: TypeScript compile
+        run: npm run build:ts
+      - name: Build Windows installer
+        run: npm run build
