@@ -1,14 +1,24 @@
-# Auto Social Minh Điến — MVP 0.1
+# Auto Social Minh Điến — v0.2
 
-Ứng dụng Windows độc lập theo luồng:
+Ứng dụng Windows desktop local-first để:
 
-**Thư mục ảnh local → AI tạo caption theo phong cách đã duyệt → đặt lịch → tự động điều khiển Chrome đăng lên Facebook cá nhân.**
+**Ảnh local → AI viết caption → kiểm tra/chỉnh sửa → lên lịch → điều khiển Google Chrome đăng lên Facebook cá nhân.**
 
-> Đây là browser automation, không phải API xuất bản chính thức của Meta cho profile cá nhân. Facebook đổi giao diện có thể cần cập nhật selector. Ứng dụng không vượt CAPTCHA/checkpoint; khi gặp xác minh phải dừng để người dùng xử lý thủ công.
+> Đây là browser automation, **không phải Facebook Graph API**. Facebook thay đổi giao diện có thể cần cập nhật selector. Ứng dụng không vượt CAPTCHA/checkpoint/2FA; khi gặp xác minh phải dừng để người dùng xử lý thủ công.
 
-> Repo đang public: tuyệt đối không commit API key, cookie Facebook, Chrome profile, file `.env`, SQLite hoặc dữ liệu đăng nhập. Các loại dữ liệu local này đã được chặn trong `.gitignore`.
+## Trạng thái kiến trúc đã chốt
 
-## 1) Cấu trúc kho ảnh
+- Windows desktop.
+- Electron + TypeScript.
+- Playwright dùng **Google Chrome thật** qua `channel: 'chrome'`.
+- SQLite local.
+- Ảnh nằm nguyên trên máy người dùng.
+- DeepSeek API hoặc Ollama local.
+- Facebook cá nhân trước.
+- Không cần Cloudflare/Firebase cho luồng chính.
+- Không lưu username/password Facebook trong source hoặc database.
+
+## Kho ảnh local
 
 Ví dụ:
 
@@ -17,103 +27,251 @@ D:\AUTO SOCIAL\
 ├─ Tủ sồi\
 │  ├─ 01.jpg
 │  ├─ 02.jpg
-│  ├─ 03.jpg
-│  └─ thongtin.txt        (không bắt buộc)
+│  ├─ 03.webp
+│  └─ thongtin.txt
 ├─ Bàn học cao su 1m\
 │  ├─ 01.jpg
-│  └─ 02.jpg
+│  └─ 02.png
 └─ _phong-cach\
-   └─ bai-mau.txt         (không bắt buộc, dán 20-50 bài cũ vào đây)
+   └─ bai-mau.txt
 ```
 
-Tên thư mục được coi là tên mặt hàng. `thongtin.txt` chỉ chứa những dữ kiện thật mà AI được phép dùng, ví dụ giá/kích thước/chất liệu nếu anh muốn AI nhắc đến.
+Hỗ trợ: `jpg`, `jpeg`, `png`, `webp`.
 
-## 2) Chạy thử từ source
+- Tên thư mục = tên mặt hàng.
+- `thongtin.txt` là dữ kiện thật AI được phép dùng.
+- Thư mục bắt đầu bằng `_` không được coi là sản phẩm.
+- Ảnh gốc không bị sửa/xóa khi quản lý trong app.
 
-Yêu cầu: Windows 10/11, Node.js 20+, Google Chrome. Ứng dụng dùng Chrome đã cài trên máy, không tải Chromium riêng.
+## Chế độ TEST và AUTO
+
+### TEST — mặc định, nên dùng trước
+
+App tự:
+- chọn sản phẩm;
+- chọn ảnh;
+- gọi AI;
+- mở Facebook;
+- mở composer;
+- điền caption;
+- upload ảnh.
+
+Sau đó **dừng trước nút Đăng** để người dùng tự kiểm tra và bấm Đăng.
+
+### AUTO
+
+Chỉ bật khi TEST đã ổn định. App thực hiện toàn bộ luồng và tự click **Đăng**.
+
+## Chống đăng trùng
+
+Ứng dụng có nhiều lớp bảo vệ:
+
+- Electron single-instance lock: không cho chạy hai instance cùng lúc.
+- SQLite `scheduled_jobs.job_key` unique: một khung giờ chỉ claim một lần.
+- Trạng thái job: `pending → preparing → posting → posted / prepared / failed / uncertain`.
+- Nếu app crash khi đang `posting`, lần mở sau chuyển thành `uncertain` và **không tự đăng lại**.
+- AUTO retry chỉ cho `NETWORK_ERROR`.
+- Tối đa 2 retry: khoảng 30 giây và 2 phút.
+- Không retry tự động với UI change, login, CAPTCHA/checkpoint, upload lỗi hoặc lỗi không rõ.
+
+## Scheduler
+
+Scheduler dùng **giờ local của Windows**.
+
+Ví dụ:
+
+```text
+08:00, 12:00, 19:30
+```
+
+Khi app bị sleep rồi thức dậy, slot trong cửa sổ trễ ngắn vẫn được claim một lần nhờ job key. Nếu job đã claim rồi thì không chạy lại.
+
+Có thể:
+- bật/tắt tự động;
+- pause/resume scheduler;
+- “Đăng bài tiếp theo” ngay;
+- chạy nền ở system tray;
+- tự mở cùng Windows;
+- khởi động minimized.
+
+## Facebook session
+
+App dùng browser profile riêng trong `app.getPath('userData')/facebook-browser-profile`.
+
+Lần đầu:
+1. Mở Cài đặt.
+2. Bấm **Mở Facebook để đăng nhập**.
+3. Đăng nhập thủ công bằng chính chủ tài khoản.
+4. Đóng cửa sổ Chrome.
+5. Bấm **Kiểm tra trạng thái**.
+
+Status:
+- 🟢 Đã đăng nhập
+- 🟡 Cần kiểm tra
+- 🔴 Chưa đăng nhập
+
+Các trường hợp CAPTCHA/checkpoint/2FA/session expired được coi là cần kiểm tra thủ công.
+
+## AI caption
+
+AI nhận:
+- tên sản phẩm;
+- `thongtin.txt`;
+- bài mẫu phong cách;
+- thông tin sản phẩm/ghi chú ảnh trong Content Manager;
+- các ví dụ caption AI đã bị người dùng sửa trước đây.
+
+Nguyên tắc cứng:
+- không bịa giá;
+- không bịa chất liệu;
+- không bịa kích thước;
+- không bịa bảo hành/xuất xứ/khuyến mại;
+- thiếu dữ liệu thì viết ngắn;
+- không nhắc đến AI.
+
+### Caption learning
+
+Khi caption AI bị sửa trước khi đăng, app lưu:
+- bản AI gốc;
+- bản người dùng dùng thật.
+
+Những cặp sửa gần đây được đưa lại vào prompt để AI bám dần phong cách thực tế.
+
+### Multi-style
+
+Tab **Phong cách** hỗ trợ:
+- tạo style;
+- sửa style;
+- bật/tắt style;
+- đặt một style mặc định.
+
+## Content Manager
+
+Trong cùng một app có:
+- category / sub-category;
+- product;
+- product info;
+- nhiều ảnh;
+- ghi chú từng ảnh;
+- bật/tắt ảnh;
+- thứ tự ảnh;
+- AI content;
+- manual content;
+- hashtag;
+- lịch đăng;
+- trạng thái;
+- lịch sử.
+
+## Dashboard
+
+Hiển thị:
+- Facebook status;
+- TEST/AUTO;
+- bật/tắt tự động;
+- scheduler paused/running;
+- bài tiếp theo;
+- sản phẩm dự kiến;
+- số mặt hàng;
+- số ảnh;
+- số bài đăng hôm nay;
+- số lỗi hôm nay.
+
+## History & logging
+
+History có:
+- thời gian;
+- mặt hàng;
+- caption;
+- ảnh;
+- mode;
+- status;
+- error code.
+
+Local log ghi các event chính như:
+- app start;
+- schedule trigger;
+- AI start/success;
+- product selected;
+- Facebook opened;
+- image upload;
+- post success/failure.
+
+Log **không cố ý ghi API key, cookie, token hoặc session**.
+
+## Error code
+
+Các lỗi chính:
+- `NETWORK_ERROR`
+- `AI_ERROR`
+- `FACEBOOK_UI_CHANGED`
+- `NOT_LOGGED_IN`
+- `SECURITY_CHECK`
+- `UPLOAD_ERROR`
+- `UNKNOWN`
+
+## Chạy development
+
+Yêu cầu:
+- Windows 10/11
+- Node.js 22+
+- Google Chrome
 
 ```bash
 npm install
 npm run dev
 ```
 
-Lần đầu:
-1. Chọn `Kho ảnh`.
-2. Chọn DeepSeek hoặc Ollama.
-3. Bấm **Mở Facebook để đăng nhập**.
-4. Đăng nhập Facebook thủ công trong Chrome vừa mở.
-5. Đóng Chrome sau khi đăng nhập xong.
-6. Bấm **AI tạo bài tiếp theo** → kiểm tra → **Đăng ngay**.
-
-## 3) AI
-
-### DeepSeek
-Nhập API key ngay trong ứng dụng. Key được lưu trong thư mục dữ liệu ứng dụng trên máy, không gửi lên server của phần mềm này.
-
-### Ollama local
-Chọn `Ollama local`, URL mặc định `http://127.0.0.1:11434`, sau đó chọn model đang có trên máy.
-
-## 4) Tự động đăng
-
-Cài các giờ như:
-
-```text
-08:00, 12:00, 19:30
-```
-
-Bật `Tự động đăng`. Ứng dụng chạy thì cứ đến giờ sẽ:
-- chọn mặt hàng đủ điều kiện;
-- ưu tiên ảnh chưa dùng;
-- tạo caption;
-- mở Chrome;
-- đăng bài;
-- lưu lịch sử SQLite.
-
-## 5) Quy tắc an toàn
-
-- Không lưu username/password Facebook trong code/database.
-- Dùng Chrome profile riêng của ứng dụng.
-- Không vượt CAPTCHA, checkpoint hoặc xác minh tài khoản.
-- Không tự bịa giá, chất liệu, kích thước, bảo hành.
-- Khi Facebook đổi giao diện và selector không còn khớp, app báo lỗi thay vì click bừa.
-
-## 6) Build .exe
-
-Trên Windows:
+## Build installer Windows
 
 ```bash
 npm install
 npm run build
 ```
 
-File cài đặt sẽ nằm trong thư mục `dist/` do electron-builder tạo.
+Kết quả nằm trong:
 
-## 7) Dữ liệu local
+```text
+release/
+  Auto Social Minh Dien Setup 0.2.0.exe
+```
 
-SQLite và config nằm trong `app.getPath('userData')` của Electron. Ảnh vẫn nằm nguyên trong kho ảnh mà anh chọn.
+Build dùng `--publish never`, nên không cần `GH_TOKEN` chỉ để đóng gói installer.
 
-## 8) MVP hiện có
+## Dữ liệu local / bảo mật
 
-- Chọn kho ảnh local.
-- Quét thư mục mặt hàng.
-- `thongtin.txt` cho dữ kiện bổ sung.
-- `_phong-cach/bai-mau.txt` cho bài mẫu.
-- DeepSeek hoặc Ollama.
-- AI caption chống bịa thông tin.
-- Ưu tiên ảnh chưa sử dụng.
-- Khoảng ngày chống lặp mặt hàng.
-- Lịch nhiều giờ mỗi ngày.
-- Chrome persistent profile.
-- Đăng ảnh + caption lên Facebook qua Playwright.
-- Dừng khi phát hiện dấu hiệu CAPTCHA/checkpoint/xác minh.
-- SQLite lưu lịch sử thành công/thất bại và ảnh đã dùng.
+Không commit:
+- `.env`
+- API key
+- cookie/session Facebook
+- Chrome profile
+- SQLite thật
+- logs
+- node_modules
+- release
 
-## 9) Việc nên làm ở bản 0.2
+Các đường dẫn này đã được chặn trong `.gitignore`.
 
-- Preview ảnh dạng thumbnail thật.
-- Nhiều phong cách caption chọn bằng dropdown.
-- Học từ phần caption người dùng sửa trước khi đăng.
-- Retry có giới hạn khi mạng lỗi.
-- Khóa chạy để không đăng trùng khi ứng dụng mở hai phiên.
-- Thông báo Windows khi đăng thành công/thất bại.
-- Bộ selector Facebook cập nhật từ file cấu hình để sửa mà không cần build lại app.
+## Quy trình nghiệm thu trước AUTO
+
+1. Chọn kho ảnh local.
+2. TEST scan nhiều folder.
+3. Kiểm tra `thongtin.txt`.
+4. TEST AI caption với sản phẩm đủ/thiếu thông tin.
+5. Kiểm tra ảnh preview và thứ tự ảnh.
+6. Đăng nhập Facebook qua Chrome profile riêng.
+7. TEST ít nhất 10 bài: phải dừng trước nút Đăng.
+8. Test lịch 1 slot và xác nhận không chạy hai lần.
+9. Test mất mạng → retry có giới hạn.
+10. Test logout/checkpoint → phải dừng, không retry tự động.
+11. Đóng/mở app trong lúc job posting test → trạng thái phải thành `uncertain`, không đăng lại.
+12. Chỉ khi các mục trên ổn định mới chuyển sang AUTO.
+
+## CI
+
+GitHub Actions chạy trên Windows:
+- `npm install`;
+- TypeScript compile;
+- build NSIS installer;
+- upload installer thành artifact để tải test.
+
+**Không merge vào `main` nếu TypeScript/build Windows còn đỏ.**
