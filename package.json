@@ -9,7 +9,9 @@
     "dev": "npm run build:ts && electron .",
     "build:ts": "tsc",
     "build": "npm run build:ts && electron-builder --win nsis --publish never",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "electron-builder install-app-deps",
+    "check:renderer": "node --check renderer/app.js",
+    "test": "npm run build:ts && npm run check:renderer"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",
