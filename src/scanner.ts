@@ -18,7 +18,8 @@ function readInfo(folder: string): string {
 
 export function scanProducts(rootFolder: string, db: AppDb): ProductFolder[] {
   if (!rootFolder || !fs.existsSync(rootFolder)) return [];
-  const entries = fs.readdirSync(rootFolder, { withFileTypes: true }).filter(e => e.isDirectory());
+  const entries = fs.readdirSync(rootFolder, { withFileTypes: true })
+    .filter(e => e.isDirectory() && !e.name.startsWith('_'));
 
   return entries.map(entry => {
     const folderPath = path.join(rootFolder, entry.name);
@@ -57,7 +58,17 @@ export function chooseEligibleProduct(products: ProductFolder[], daysBeforeRepea
   return eligible[0];
 }
 
-export function chooseImages(product: ProductFolder, count: number): string[] {
-  const primary = product.unusedImages.length ? product.unusedImages : product.images;
-  return primary.slice(0, Math.max(1, count));
+export function chooseImages(product: ProductFolder, count: number, db?: AppDb, reuseAfterDays = 30): string[] {
+  if (product.unusedImages.length) return product.unusedImages.slice(0, Math.max(1, count));
+  const reusable = db
+    ? product.images.filter(img => db.imageReusable(img, reuseAfterDays))
+    : product.images;
+  return reusable.slice(0, Math.max(1, count));
+}
+
+export function inventoryStats(products: ProductFolder[]) {
+  return {
+    productCount: products.length,
+    imageCount: products.reduce((sum, p) => sum + p.images.length, 0)
+  };
 }

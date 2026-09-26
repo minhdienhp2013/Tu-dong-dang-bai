@@ -34,10 +34,23 @@ declare global {
       postNow(postId: number): Promise<any>;
       listHistory(): Promise<any[]>;
 
+      listStyles(): Promise<any[]>;
+      createStyle(data: any): Promise<any>;
+      updateStyle(id: number, data: any): Promise<any>;
+      deleteStyle(id: number): Promise<any>;
+      setDefaultStyle(id: number): Promise<any>;
+
       openLogin(): Promise<any>;
+      checkFacebookStatus(): Promise<any>;
       generateDraft(folderPath?: string): Promise<any>;
       postDraft(draft: any): Promise<any>;
       recentPosts(): Promise<any[]>;
+
+      pauseScheduler(): Promise<any>;
+      resumeScheduler(): Promise<any>;
+      postNext(): Promise<any>;
+      getDashboard(): Promise<any>;
+      getLogPath(): Promise<string>;
       onStatus(cb: (message: string) => void): void;
     };
   }

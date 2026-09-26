@@ -33,9 +33,23 @@ contextBridge.exposeInMainWorld('autoSocial', {
   postNow: (postId: number) => ipcRenderer.invoke('schedule:post-now', postId),
   listHistory: () => ipcRenderer.invoke('history:list'),
 
+  listStyles: () => ipcRenderer.invoke('styles:list'),
+  createStyle: (data: any) => ipcRenderer.invoke('styles:create', data),
+  updateStyle: (id: number, data: any) => ipcRenderer.invoke('styles:update', id, data),
+  deleteStyle: (id: number) => ipcRenderer.invoke('styles:delete', id),
+  setDefaultStyle: (id: number) => ipcRenderer.invoke('styles:set-default', id),
+
   openLogin: () => ipcRenderer.invoke('facebook:login'),
+  checkFacebookStatus: () => ipcRenderer.invoke('facebook:status'),
   generateDraft: (folderPath?: string) => ipcRenderer.invoke('draft:generate', folderPath),
   postDraft: (draft: any) => ipcRenderer.invoke('facebook:post', draft),
   recentPosts: () => ipcRenderer.invoke('posts:recent'),
+
+  pauseScheduler: () => ipcRenderer.invoke('scheduler:pause'),
+  resumeScheduler: () => ipcRenderer.invoke('scheduler:resume'),
+  postNext: () => ipcRenderer.invoke('scheduler:post-next'),
+  getDashboard: () => ipcRenderer.invoke('dashboard:get'),
+  getLogPath: () => ipcRenderer.invoke('app:log-path'),
+
   onStatus: (cb: (message: string) => void) => ipcRenderer.on('status', (_e, msg) => cb(msg))
 });

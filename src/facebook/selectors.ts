@@ -1,0 +1,45 @@
+export const FACEBOOK_SELECTORS = {
+  composerTexts: [
+    'Bạn đang nghĩ gì?',
+    'Bạn đang nghĩ gì',
+    "What's on your mind?"
+  ],
+  photoTexts: [
+    'Ảnh/video',
+    'Photo/video'
+  ],
+  postButtonNames: [
+    /^Đăng$/i,
+    /^Post$/i
+  ],
+  editor: '[contenteditable="true"]',
+  fileInput: 'input[type="file"]',
+  dialog: '[role="dialog"]'
+};
+
+export const SECURITY_SIGNALS = [
+  'captcha',
+  'checkpoint',
+  'security check',
+  'enter security code',
+  'login approval',
+  'two-factor authentication',
+  'two factor authentication',
+  'confirm your identity',
+  'session expired',
+  'xác minh tài khoản',
+  'xác nhận danh tính',
+  'xác nhận đây là bạn',
+  'kiểm tra bảo mật',
+  'nhập mã bảo mật',
+  'phê duyệt đăng nhập',
+  'mã xác thực hai yếu tố',
+  'phiên đã hết hạn'
+];
+
+export const LOGIN_PAGE_SIGNALS = [
+  'log into facebook',
+  'đăng nhập facebook',
+  'email or phone number',
+  'email hoặc số điện thoại'
+];
