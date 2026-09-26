@@ -1,7 +1,7 @@
 {
   "name": "auto-social-minh-dien",
-  "version": "0.1.0",
-  "description": "Windows app: local product folders -> AI captions -> scheduled Facebook personal-profile posting via browser automation",
+  "version": "0.2.0",
+  "description": "Windows app: local product content -> AI -> safe scheduler -> Facebook personal-profile browser automation",
   "main": "dist/main.js",
   "author": "Minh Dien",
   "license": "MIT",
@@ -32,7 +32,9 @@
       "package.json"
     ],
     "win": {
-      "target": ["nsis"]
+      "target": [
+        "nsis"
+      ]
     },
     "nsis": {
       "oneClick": false,
@@ -42,6 +44,9 @@
     },
     "asarUnpack": [
       "node_modules/better-sqlite3/**/*"
-    ]
+    ],
+    "directories": {
+      "output": "release"
+    }
   }
 }
