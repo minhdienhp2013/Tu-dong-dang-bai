@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { app } from 'electron';
+import { app, safeStorage } from 'electron';
 import type { AppConfig } from './types';
 
 const DEFAULT_STYLE = `Bạn viết bài Facebook cá nhân như một người bán hàng thật.
@@ -15,6 +15,10 @@ Yêu cầu:
 - Cuối bài mời khách nhắn tin hỏi thêm một cách tự nhiên.
 - Tối đa 5 hashtag và chỉ dùng khi phù hợp.
 - Không tự nhận là AI, không nói đây là nội dung được tạo tự động.`;
+
+type StoredConfig = Partial<AppConfig> & {
+  deepseekApiKeyEncrypted?: string;
+};
 
 function defaultConfig(): AppConfig {
   const userData = app.getPath('userData');
@@ -54,6 +58,18 @@ function sanitizeConfig(raw: Partial<AppConfig>, base: AppConfig): AppConfig {
   };
 }
 
+function decryptSecret(saved: StoredConfig): string {
+  if (saved.deepseekApiKeyEncrypted && safeStorage.isEncryptionAvailable()) {
+    try {
+      return safeStorage.decryptString(Buffer.from(saved.deepseekApiKeyEncrypted, 'base64'));
+    } catch {
+      return '';
+    }
+  }
+  // Migration path for MVP versions that stored the key as plain local config.
+  return String(saved.deepseekApiKey || process.env.DEEPSEEK_API_KEY || '');
+}
+
 export class ConfigStore {
   private filePath = path.join(app.getPath('userData'), 'config.json');
 
@@ -61,8 +77,12 @@ export class ConfigStore {
     const base = defaultConfig();
     if (!fs.existsSync(this.filePath)) return base;
     try {
-      const saved = JSON.parse(fs.readFileSync(this.filePath, 'utf8'));
-      return sanitizeConfig(saved, base);
+      const saved = JSON.parse(fs.readFileSync(this.filePath, 'utf8')) as StoredConfig;
+      const withSecret: Partial<AppConfig> = {
+        ...saved,
+        deepseekApiKey: decryptSecret(saved)
+      };
+      return sanitizeConfig(withSecret, base);
     } catch {
       return base;
     }
@@ -70,8 +90,16 @@ export class ConfigStore {
 
   save(next: Partial<AppConfig>): AppConfig {
     const merged = sanitizeConfig({ ...this.load(), ...next }, defaultConfig());
+    const stored: StoredConfig = { ...merged };
+    delete stored.deepseekApiKeyEncrypted;
+
+    if (merged.deepseekApiKey && safeStorage.isEncryptionAvailable()) {
+      stored.deepseekApiKeyEncrypted = safeStorage.encryptString(merged.deepseekApiKey).toString('base64');
+      delete stored.deepseekApiKey;
+    }
+
     fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
-    fs.writeFileSync(this.filePath, JSON.stringify(merged, null, 2), 'utf8');
+    fs.writeFileSync(this.filePath, JSON.stringify(stored, null, 2), 'utf8');
     return merged;
   }
 }
