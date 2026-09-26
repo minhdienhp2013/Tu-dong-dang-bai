@@ -166,15 +166,19 @@ export class AppDb {
       CREATE INDEX IF NOT EXISTS idx_product_images_product ON product_images(product_id);
       CREATE INDEX IF NOT EXISTS idx_content_product ON content_drafts(product_id);
       CREATE INDEX IF NOT EXISTS idx_social_posts_schedule ON social_posts(status, scheduled_at);
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_social_posts_local_key ON social_posts(scheduled_local_key) WHERE scheduled_local_key IS NOT NULL;
       CREATE INDEX IF NOT EXISTS idx_posts_product_folder ON posts(product_folder);
       CREATE INDEX IF NOT EXISTS idx_posts_posted_at ON posts(posted_at);
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_posts_job_key ON posts(job_key) WHERE job_key IS NOT NULL;
       CREATE INDEX IF NOT EXISTS idx_jobs_due ON scheduled_jobs(status, next_retry_at);
       CREATE INDEX IF NOT EXISTS idx_learning_recent ON caption_learning(created_at DESC);
     `);
 
     this.migrateExistingSchema();
+    this.db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_social_posts_local_key
+        ON social_posts(scheduled_local_key) WHERE scheduled_local_key IS NOT NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_posts_job_key
+        ON posts(job_key) WHERE job_key IS NOT NULL;
+    `);
     this.seedDefaultStyle();
   }
 
