@@ -7,88 +7,231 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <header>
-    <div>
-      <h1>🤖 Auto Social Minh Điến</h1>
-      <p>Ảnh local → AI viết bài → lịch đăng → Facebook cá nhân</p>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">🤖</div>
+        <div><b>Auto Social</b><small>Minh Điến</small></div>
+      </div>
+      <nav>
+        <button class="nav active" data-tab="dashboard">🏠 <span>Tổng quan</span></button>
+        <button class="nav" data-tab="catalog">🗂️ <span>Sản phẩm & ảnh</span></button>
+        <button class="nav" data-tab="content">✨ <span>Nội dung AI</span></button>
+        <button class="nav" data-tab="schedule">📅 <span>Lịch đăng</span></button>
+        <button class="nav" data-tab="history">🕘 <span>Lịch sử</span></button>
+        <button class="nav" data-tab="settings">⚙️ <span>Cài đặt</span></button>
+      </nav>
+      <div class="sidebar-note">Ưu tiên Facebook cá nhân</div>
+    </aside>
+
+    <div class="main-area">
+      <header class="topbar">
+        <div>
+          <h1 id="pageTitle">Tổng quan</h1>
+          <p id="pageSubtitle">Quản lý nội dung và tự động đăng trong cùng một phần mềm.</p>
+        </div>
+        <div id="status" class="status">Sẵn sàng</div>
+      </header>
+
+      <main>
+        <section id="tab-dashboard" class="tab active">
+          <div class="stats">
+            <div class="stat"><span>Sản phẩm</span><b id="statProducts">0</b></div>
+            <div class="stat"><span>Nội dung</span><b id="statContents">0</b></div>
+            <div class="stat"><span>Đang chờ đăng</span><b id="statScheduled">0</b></div>
+            <div class="stat"><span>Đã đăng</span><b id="statPosted">0</b></div>
+          </div>
+          <div class="grid-2">
+            <div class="card">
+              <h2>Quy trình</h2>
+              <div class="flow">
+                <div>1️⃣ Tạo danh mục & sản phẩm</div>
+                <div>2️⃣ Thêm ảnh + ghi chú từng ảnh</div>
+                <div>3️⃣ AI tạo nội dung + hashtag</div>
+                <div>4️⃣ Chọn ảnh và đặt lịch</div>
+                <div>5️⃣ Phần mềm tự đăng Facebook</div>
+              </div>
+            </div>
+            <div class="card">
+              <h2>Bài sắp đăng</h2>
+              <div id="dashboardUpcoming" class="list"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="tab-catalog" class="tab">
+          <div class="catalog-layout">
+            <div class="card pane">
+              <div class="section-head">
+                <h2>Danh mục</h2>
+                <button id="newCategoryBtn" class="icon-btn">＋</button>
+              </div>
+              <button class="category-item active" data-category="">📦 Tất cả sản phẩm</button>
+              <div id="categoryList"></div>
+              <div id="categoryForm" class="subform hidden">
+                <label>Tên danh mục / mục con</label>
+                <input id="categoryName" placeholder="Ví dụ: Tủ" />
+                <label>Thuộc danh mục</label>
+                <select id="categoryParent"></select>
+                <div class="actions">
+                  <button id="saveCategoryBtn">Lưu</button>
+                  <button id="cancelCategoryBtn" class="ghost">Hủy</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="card pane">
+              <div class="section-head">
+                <h2>Sản phẩm</h2>
+                <button id="newProductBtn">＋ Thêm</button>
+              </div>
+              <input id="productSearch" placeholder="🔎 Tìm sản phẩm..." />
+              <div id="productList" class="product-list"></div>
+            </div>
+
+            <div class="card pane editor-pane">
+              <div id="emptyProduct" class="empty">Chọn một sản phẩm hoặc bấm <b>Thêm</b>.</div>
+              <div id="productEditor" class="hidden">
+                <div class="section-head">
+                  <h2 id="productEditorTitle">Sản phẩm</h2>
+                  <label class="toggle"><input id="productActive" type="checkbox" checked /> Đang sử dụng</label>
+                </div>
+                <label>Tên sản phẩm</label>
+                <input id="productName" />
+                <label>Danh mục</label>
+                <select id="productCategory"></select>
+                <label>Mô tả ngắn</label>
+                <textarea id="productDescription" rows="2" placeholder="Mô tả tổng quan..."></textarea>
+                <label>Thông tin AI được phép sử dụng</label>
+                <textarea id="productInfo" rows="4" placeholder="Giá, kích thước, chất liệu... Chỉ nhập thông tin đúng."></textarea>
+                <label>Hashtag mặc định</label>
+                <input id="productHashtags" placeholder="#tusoi #noithat" />
+                <div class="actions">
+                  <button id="saveProductBtn">💾 Lưu sản phẩm</button>
+                  <button id="deleteProductBtn" class="danger">🗑 Xóa</button>
+                </div>
+
+                <div class="divider"></div>
+                <div class="section-head">
+                  <div><h2>Hình ảnh</h2><p>Ghi chú riêng cho từng ảnh để AI hiểu đúng chi tiết.</p></div>
+                  <button id="addImagesBtn">＋ Thêm ảnh</button>
+                </div>
+                <div id="imageGrid" class="image-grid"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="tab-content" class="tab">
+          <div class="content-layout">
+            <div class="card">
+              <div class="section-head">
+                <h2>Nội dung theo sản phẩm</h2>
+                <button id="generateAiBtn">✨ AI tạo bài</button>
+              </div>
+              <label>Sản phẩm</label>
+              <select id="contentProduct"></select>
+              <div class="actions">
+                <button id="newManualContentBtn" class="ghost">＋ Viết thủ công</button>
+              </div>
+              <div id="contentList" class="content-list"></div>
+            </div>
+
+            <div class="card editor-pane">
+              <div id="emptyContent" class="empty">Chọn hoặc tạo một nội dung.</div>
+              <div id="contentEditor" class="hidden">
+                <div class="section-head">
+                  <div>
+                    <h2 id="contentEditorTitle">Nội dung</h2>
+                    <small id="contentMeta"></small>
+                  </div>
+                  <span id="contentStatusBadge" class="badge">draft</span>
+                </div>
+                <label>Tiêu đề</label>
+                <input id="contentTitle" />
+                <label>Caption</label>
+                <textarea id="contentCaption" rows="10"></textarea>
+                <label>Hashtag</label>
+                <input id="contentHashtags" />
+                <div class="actions">
+                  <button id="saveContentBtn">💾 Lưu nội dung</button>
+                  <button id="deleteContentBtn" class="danger">🗑 Xóa</button>
+                </div>
+
+                <div class="divider"></div>
+                <h2>Ảnh dùng cho bài này</h2>
+                <div id="scheduleImageGrid" class="image-grid compact"></div>
+
+                <label>Ngày giờ đăng</label>
+                <input id="scheduleAt" type="datetime-local" />
+                <div class="actions">
+                  <button id="scheduleBtn">📅 Đặt lịch Facebook</button>
+                  <button id="postNowBtn" class="primary">🚀 Đăng ngay</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="tab-schedule" class="tab">
+          <div class="card">
+            <div class="section-head">
+              <div><h2>Lịch đăng Facebook</h2><p>Mỗi lịch giữ đúng nội dung và ảnh đã chọn.</p></div>
+              <button id="refreshScheduleBtn" class="ghost">↻ Làm mới</button>
+            </div>
+            <div id="scheduleList" class="table-list"></div>
+          </div>
+        </section>
+
+        <section id="tab-history" class="tab">
+          <div class="card">
+            <div class="section-head">
+              <div><h2>Lịch sử đăng</h2><p>Thành công, thất bại, đã hủy và số lần thử.</p></div>
+              <button id="refreshHistoryBtn" class="ghost">↻ Làm mới</button>
+            </div>
+            <div id="historyList" class="table-list"></div>
+          </div>
+        </section>
+
+        <section id="tab-settings" class="tab">
+          <div class="grid-2">
+            <div class="card">
+              <h2>Facebook</h2>
+              <p>Dùng Chrome profile riêng. Không lưu mật khẩu Facebook trong code.</p>
+              <button id="loginBtn">🌐 Mở Facebook để đăng nhập</button>
+              <p class="hint">Nếu Facebook yêu cầu CAPTCHA/checkpoint/xác minh, phần mềm dừng để anh xử lý thủ công.</p>
+            </div>
+            <div class="card">
+              <h2>AI</h2>
+              <label>Nhà cung cấp</label>
+              <select id="aiProvider">
+                <option value="deepseek">DeepSeek API</option>
+                <option value="ollama">Ollama local</option>
+              </select>
+              <div id="deepseekFields">
+                <label>DeepSeek API key</label>
+                <input id="deepseekApiKey" type="password" placeholder="sk-..." />
+                <label>Model</label>
+                <input id="deepseekModel" />
+              </div>
+              <div id="ollamaFields" class="hidden">
+                <label>Ollama URL</label>
+                <input id="ollamaUrl" />
+                <label>Model</label>
+                <input id="ollamaModel" />
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <h2>Phong cách AI đã duyệt</h2>
+            <textarea id="stylePrompt" rows="10"></textarea>
+            <p class="hint">AI phải bám dữ liệu sản phẩm và ghi chú ảnh; không được bịa thông tin.</p>
+            <button id="saveSettingsBtn">💾 Lưu cài đặt</button>
+          </div>
+        </section>
+      </main>
     </div>
-    <div id="status" class="status">Sẵn sàng</div>
-  </header>
-
-  <main>
-    <section class="card">
-      <h2>1. Kho ảnh</h2>
-      <div class="row">
-        <input id="rootFolder" readonly placeholder="Chưa chọn thư mục ảnh" />
-        <button id="chooseFolder">📁 Chọn thư mục</button>
-        <button id="scanBtn" class="secondary">🔄 Quét</button>
-      </div>
-      <div id="products" class="products"></div>
-    </section>
-
-    <section class="card two-col">
-      <div>
-        <h2>2. Facebook</h2>
-        <p>Dùng hồ sơ Chrome riêng. Lần đầu anh đăng nhập thủ công, các lần sau ứng dụng dùng lại phiên đăng nhập.</p>
-        <button id="loginBtn">🌐 Mở Facebook để đăng nhập</button>
-      </div>
-      <div>
-        <h2>3. AI</h2>
-        <label>Nhà cung cấp</label>
-        <select id="aiProvider">
-          <option value="deepseek">DeepSeek API</option>
-          <option value="ollama">Ollama local</option>
-        </select>
-        <div id="deepseekFields">
-          <label>DeepSeek API key</label>
-          <input id="deepseekApiKey" type="password" placeholder="sk-..." />
-          <label>Model</label>
-          <input id="deepseekModel" value="deepseek-chat" />
-        </div>
-        <div id="ollamaFields" class="hidden">
-          <label>Ollama URL</label>
-          <input id="ollamaUrl" value="http://127.0.0.1:11434" />
-          <label>Model</label>
-          <input id="ollamaModel" value="qwen2.5:3b" />
-        </div>
-      </div>
-    </section>
-
-    <section class="card">
-      <h2>4. Phong cách viết</h2>
-      <textarea id="stylePrompt" rows="9"></textarea>
-      <p class="hint">Có thể thêm file <b>_phong-cach/bai-mau.txt</b> trong kho ảnh để AI bắt chước các bài cũ của anh.</p>
-    </section>
-
-    <section class="card two-col">
-      <div>
-        <h2>5. Lịch tự động</h2>
-        <label>Giờ đăng, cách nhau bằng dấu phẩy</label>
-        <input id="postingTimes" placeholder="08:00, 12:00, 19:30" />
-        <label>Không lặp cùng mặt hàng trong</label>
-        <div class="inline"><input id="repeatDays" type="number" min="0" max="365" /><span>ngày</span></div>
-        <label>Số ảnh mỗi bài</label>
-        <input id="imagesPerPost" type="number" min="1" max="10" />
-        <label class="switch-row"><input id="autoPostEnabled" type="checkbox" /> <b>Bật tự động đăng</b></label>
-        <button id="saveBtn">💾 Lưu cài đặt</button>
-      </div>
-      <div>
-        <h2>6. Tạo thử ngay</h2>
-        <button id="generateBtn" class="primary wide">✨ AI tạo bài tiếp theo</button>
-        <div id="draftBox" class="draft hidden">
-          <h3 id="draftName"></h3>
-          <div id="draftImages" class="thumbs"></div>
-          <textarea id="draftCaption" rows="10"></textarea>
-          <button id="postNowBtn" class="danger wide">🚀 ĐĂNG NGAY LÊN FACEBOOK</button>
-        </div>
-      </div>
-    </section>
-
-    <section class="card">
-      <h2>Lịch sử gần đây</h2>
-      <div id="history"></div>
-    </section>
-  </main>
+  </div>
 
   <script src="app.js"></script>
 </body>
