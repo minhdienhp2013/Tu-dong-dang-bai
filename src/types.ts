@@ -1,3 +1,14 @@
+export type RunMode = 'test' | 'auto';
+export type FacebookLoginStatus = 'logged_in' | 'needs_check' | 'logged_out';
+export type PostErrorCode =
+  | 'NETWORK_ERROR'
+  | 'AI_ERROR'
+  | 'FACEBOOK_UI_CHANGED'
+  | 'NOT_LOGGED_IN'
+  | 'SECURITY_CHECK'
+  | 'UPLOAD_ERROR'
+  | 'UNKNOWN';
+
 export type AppConfig = {
   rootFolder: string;
   aiProvider: 'deepseek' | 'ollama';
@@ -8,9 +19,17 @@ export type AppConfig = {
   stylePrompt: string;
   postingTimes: string[];
   autoPostEnabled: boolean;
+  schedulerPaused: boolean;
   daysBeforeRepeatProduct: number;
+  imageReuseAfterDays: number;
   imagesPerPost: number;
   browserProfileDir: string;
+  runMode: RunMode;
+  autoStartWindows: boolean;
+  startMinimized: boolean;
+  minimizeToTray: boolean;
+  keepRunningInTray: boolean;
+  defaultStyleId: number | null;
 };
 
 export type CategoryRecord = {
@@ -56,6 +75,8 @@ export type ContentDraftRecord = {
   hashtags: string;
   source: 'ai' | 'manual';
   status: 'draft' | 'approved' | 'used';
+  ai_original?: string | null;
+  style_id?: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -68,7 +89,12 @@ export type SocialPostRecord = {
   platform: 'facebook';
   image_ids_json: string;
   scheduled_at: string | null;
-  status: 'draft' | 'scheduled' | 'posting' | 'posted' | 'failed' | 'cancelled';
+  scheduled_local_key?: string | null;
+  mode?: RunMode;
+  status: 'draft' | 'pending' | 'preparing' | 'scheduled' | 'posting' | 'prepared' | 'posted' | 'failed' | 'uncertain' | 'cancelled';
+  error_code?: PostErrorCode | null;
+  retry_count?: number;
+  next_retry_at?: string | null;
   posted_at: string | null;
   error_message: string | null;
   created_at: string;
@@ -97,5 +123,40 @@ export type DraftPost = {
   productName: string;
   productFolder: string;
   caption: string;
+  aiOriginal?: string;
   images: string[];
+  mode?: RunMode;
+  jobKey?: string;
+};
+
+export type StyleRecord = {
+  id: number;
+  name: string;
+  prompt: string;
+  enabled: number;
+  is_default: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type LearningRecord = {
+  id: number;
+  product_name: string;
+  ai_original: string;
+  user_final: string;
+  created_at: string;
+};
+
+export type FacebookPublishResult = {
+  prepared: boolean;
+  posted: boolean;
+};
+
+export type DashboardSummary = {
+  productCount: number;
+  imageCount: number;
+  postedToday: number;
+  failedToday: number;
+  nextPostAt: string | null;
+  nextProduct: string | null;
 };
