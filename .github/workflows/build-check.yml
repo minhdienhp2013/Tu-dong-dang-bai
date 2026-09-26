@@ -16,8 +16,8 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm install
-      - name: TypeScript compile
-        run: npm run build:ts
+      - name: Compile and renderer syntax test
+        run: npm test
       - name: Build Windows installer
         run: npm run build
       - name: Upload Windows installer
