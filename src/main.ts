@@ -204,7 +204,7 @@ async function executeScheduledJob(jobId: number, draft: DraftPost) {
     }
   } catch (error) {
     const info = errorInfo(error);
-    const row = db.getRetryableJobs(new Date(0).toISOString()).find((x: any) => x.id === jobId) as any;
+    const row = db.getScheduledJob(jobId);
     const retryCount = Number(row?.retry_count || 0) + 1;
     const canRetry = mode === 'auto' && isAutoRetryable(info.code) && retryCount <= 2;
 
