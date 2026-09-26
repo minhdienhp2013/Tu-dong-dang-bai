@@ -1,0 +1,21 @@
+name: TypeScript check
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies without native postinstall
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: TypeScript compile check
+        run: npm run build:ts
