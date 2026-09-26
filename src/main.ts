@@ -296,10 +296,18 @@ async function processNetworkRetries() {
 async function processManagedPosts() {
   const cfg = configStore.load();
   if (cfg.schedulerPaused) return;
-  const due = db.getDueScheduledPosts(new Date().toISOString());
+  const now = new Date().toISOString();
+  const due = db.getDueScheduledPosts(now);
   for (const post of due) {
     if (managedPosting.has(post.id)) continue;
     await publishManagedPost(post.id).catch(() => undefined);
+  }
+  if (cfg.runMode === 'auto') {
+    const retryable = db.getRetryableSocialPosts(now);
+    for (const post of retryable) {
+      if (managedPosting.has(post.id)) continue;
+      await publishManagedPost(post.id).catch(() => undefined);
+    }
   }
 }
 
