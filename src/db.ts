@@ -441,6 +441,17 @@ export class AppDb {
       ORDER BY sp.scheduled_at LIMIT 5`).all(now) as SocialPostRecord[];
   }
 
+  getRetryableSocialPosts(now: string): SocialPostRecord[] {
+    return this.db.prepare(`SELECT sp.*, p.name AS product_name, d.title, d.caption, d.hashtags
+      FROM social_posts sp JOIN products p ON p.id = sp.product_id LEFT JOIN content_drafts d ON d.id = sp.content_id
+      WHERE sp.status = 'failed'
+        AND sp.error_code = 'NETWORK_ERROR'
+        AND sp.retry_count <= 2
+        AND sp.next_retry_at IS NOT NULL
+        AND sp.next_retry_at <= ?
+      ORDER BY sp.next_retry_at LIMIT 1`).all(now) as SocialPostRecord[];
+  }
+
   updateSocialPostStatus(id: number, status: SocialPostRecord['status'], errorMessage: string | null = null, errorCode: PostErrorCode | null = null) {
     const postedAt = status === 'posted' ? nowIso() : null;
     this.db.prepare(`UPDATE social_posts SET status = ?, error_code = ?, error_message = ?, posted_at = COALESCE(?, posted_at), updated_at = ? WHERE id = ?`)
@@ -572,8 +583,17 @@ export class AppDb {
 
   dashboardSummary(nextPostAt: string | null = null, nextProduct: string | null = null): DashboardSummary {
     const today = new Date().toISOString().slice(0, 10);
-    const postedToday = Number((this.db.prepare("SELECT COUNT(*) c FROM posts WHERE status='posted' AND substr(posted_at,1,10)=?").get(today) as any)?.c || 0);
-    const failedToday = Number((this.db.prepare("SELECT COUNT(*) c FROM posts WHERE status IN ('failed','uncertain') AND substr(created_at,1,10)=?").get(today) as any)?.c || 0);
-    return { productCount: 0, imageCount: 0, postedToday, failedToday, nextPostAt, nextProduct };
+    const legacyPosted = Number((this.db.prepare("SELECT COUNT(*) c FROM posts WHERE status='posted' AND substr(posted_at,1,10)=?").get(today) as any)?.c || 0);
+    const managedPosted = Number((this.db.prepare("SELECT COUNT(*) c FROM social_posts WHERE status='posted' AND substr(posted_at,1,10)=?").get(today) as any)?.c || 0);
+    const legacyFailed = Number((this.db.prepare("SELECT COUNT(*) c FROM posts WHERE status IN ('failed','uncertain') AND substr(created_at,1,10)=?").get(today) as any)?.c || 0);
+    const managedFailed = Number((this.db.prepare("SELECT COUNT(*) c FROM social_posts WHERE status IN ('failed','uncertain') AND substr(updated_at,1,10)=?").get(today) as any)?.c || 0);
+    return {
+      productCount: 0,
+      imageCount: 0,
+      postedToday: legacyPosted + managedPosted,
+      failedToday: legacyFailed + managedFailed,
+      nextPostAt,
+      nextProduct
+    };
   }
 }
