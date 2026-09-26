@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Auto Social Minh Điến</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <div>
+      <h1>🤖 Auto Social Minh Điến</h1>
+      <p>Ảnh local → AI viết bài → lịch đăng → Facebook cá nhân</p>
+    </div>
+    <div id="status" class="status">Sẵn sàng</div>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>1. Kho ảnh</h2>
+      <div class="row">
+        <input id="rootFolder" readonly placeholder="Chưa chọn thư mục ảnh" />
+        <button id="chooseFolder">📁 Chọn thư mục</button>
+        <button id="scanBtn" class="secondary">🔄 Quét</button>
+      </div>
+      <div id="products" class="products"></div>
+    </section>
+
+    <section class="card two-col">
+      <div>
+        <h2>2. Facebook</h2>
+        <p>Dùng hồ sơ Chrome riêng. Lần đầu anh đăng nhập thủ công, các lần sau ứng dụng dùng lại phiên đăng nhập.</p>
+        <button id="loginBtn">🌐 Mở Facebook để đăng nhập</button>
+      </div>
+      <div>
+        <h2>3. AI</h2>
+        <label>Nhà cung cấp</label>
+        <select id="aiProvider">
+          <option value="deepseek">DeepSeek API</option>
+          <option value="ollama">Ollama local</option>
+        </select>
+        <div id="deepseekFields">
+          <label>DeepSeek API key</label>
+          <input id="deepseekApiKey" type="password" placeholder="sk-..." />
+          <label>Model</label>
+          <input id="deepseekModel" value="deepseek-chat" />
+        </div>
+        <div id="ollamaFields" class="hidden">
+          <label>Ollama URL</label>
+          <input id="ollamaUrl" value="http://127.0.0.1:11434" />
+          <label>Model</label>
+          <input id="ollamaModel" value="qwen2.5:3b" />
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>4. Phong cách viết</h2>
+      <textarea id="stylePrompt" rows="9"></textarea>
+      <p class="hint">Có thể thêm file <b>_phong-cach/bai-mau.txt</b> trong kho ảnh để AI bắt chước các bài cũ của anh.</p>
+    </section>
+
+    <section class="card two-col">
+      <div>
+        <h2>5. Lịch tự động</h2>
+        <label>Giờ đăng, cách nhau bằng dấu phẩy</label>
+        <input id="postingTimes" placeholder="08:00, 12:00, 19:30" />
+        <label>Không lặp cùng mặt hàng trong</label>
+        <div class="inline"><input id="repeatDays" type="number" min="0" max="365" /><span>ngày</span></div>
+        <label>Số ảnh mỗi bài</label>
+        <input id="imagesPerPost" type="number" min="1" max="10" />
+        <label class="switch-row"><input id="autoPostEnabled" type="checkbox" /> <b>Bật tự động đăng</b></label>
+        <button id="saveBtn">💾 Lưu cài đặt</button>
+      </div>
+      <div>
+        <h2>6. Tạo thử ngay</h2>
+        <button id="generateBtn" class="primary wide">✨ AI tạo bài tiếp theo</button>
+        <div id="draftBox" class="draft hidden">
+          <h3 id="draftName"></h3>
+          <div id="draftImages" class="thumbs"></div>
+          <textarea id="draftCaption" rows="10"></textarea>
+          <button id="postNowBtn" class="danger wide">🚀 ĐĂNG NGAY LÊN FACEBOOK</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Lịch sử gần đây</h2>
+      <div id="history"></div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
