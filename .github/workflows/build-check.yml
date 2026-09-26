@@ -13,10 +13,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - name: Install dependencies
         run: npm install
       - name: TypeScript compile
         run: npm run build:ts
       - name: Build Windows installer
         run: npm run build
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: auto-social-minh-dien-windows
+          path: |
+            release/*.exe
+            release/*.blockmap
+          if-no-files-found: error
