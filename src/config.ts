@@ -28,9 +28,29 @@ function defaultConfig(): AppConfig {
     stylePrompt: DEFAULT_STYLE,
     postingTimes: ['08:00', '12:00', '19:30'],
     autoPostEnabled: false,
+    schedulerPaused: false,
     daysBeforeRepeatProduct: 7,
+    imageReuseAfterDays: 30,
     imagesPerPost: 4,
-    browserProfileDir: path.join(userData, 'facebook-browser-profile')
+    browserProfileDir: path.join(userData, 'facebook-browser-profile'),
+    runMode: 'test',
+    autoStartWindows: false,
+    startMinimized: false,
+    minimizeToTray: true,
+    keepRunningInTray: true,
+    defaultStyleId: null
+  };
+}
+
+function sanitizeConfig(raw: Partial<AppConfig>, base: AppConfig): AppConfig {
+  return {
+    ...base,
+    ...raw,
+    postingTimes: Array.isArray(raw.postingTimes) ? raw.postingTimes.filter(Boolean) : base.postingTimes,
+    runMode: raw.runMode === 'auto' ? 'auto' : 'test',
+    imagesPerPost: Math.max(1, Math.min(10, Number(raw.imagesPerPost ?? base.imagesPerPost))),
+    daysBeforeRepeatProduct: Math.max(0, Number(raw.daysBeforeRepeatProduct ?? base.daysBeforeRepeatProduct)),
+    imageReuseAfterDays: Math.max(0, Number(raw.imageReuseAfterDays ?? base.imageReuseAfterDays))
   };
 }
 
@@ -42,14 +62,14 @@ export class ConfigStore {
     if (!fs.existsSync(this.filePath)) return base;
     try {
       const saved = JSON.parse(fs.readFileSync(this.filePath, 'utf8'));
-      return { ...base, ...saved };
+      return sanitizeConfig(saved, base);
     } catch {
       return base;
     }
   }
 
   save(next: Partial<AppConfig>): AppConfig {
-    const merged = { ...this.load(), ...next };
+    const merged = sanitizeConfig({ ...this.load(), ...next }, defaultConfig());
     fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
     fs.writeFileSync(this.filePath, JSON.stringify(merged, null, 2), 'utf8');
     return merged;
