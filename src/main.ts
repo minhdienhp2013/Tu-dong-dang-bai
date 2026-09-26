@@ -302,12 +302,10 @@ async function processManagedPosts() {
     if (managedPosting.has(post.id)) continue;
     await publishManagedPost(post.id).catch(() => undefined);
   }
-  if (cfg.runMode === 'auto') {
-    const retryable = db.getRetryableSocialPosts(now);
-    for (const post of retryable) {
-      if (managedPosting.has(post.id)) continue;
-      await publishManagedPost(post.id).catch(() => undefined);
-    }
+  const retryable = db.getRetryableSocialPosts(now);
+  for (const post of retryable) {
+    if (managedPosting.has(post.id)) continue;
+    await publishManagedPost(post.id).catch(() => undefined);
   }
 }
 
