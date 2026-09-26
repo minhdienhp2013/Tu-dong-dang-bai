@@ -435,12 +435,19 @@ function nextScheduleInfo() {
 }
 
 function registerIpc() {
-  ipcMain.handle('config:get', () => configStore.load());
+  ipcMain.handle('config:get', () => {
+    const cfg = configStore.load();
+    return { ...cfg, deepseekApiKey: '', hasDeepseekApiKey: !!cfg.deepseekApiKey };
+  });
   ipcMain.handle('config:save', (_e, next) => {
-    const saved = configStore.save(next);
+    const incoming = { ...(next || {}) };
+    if (!String(incoming.deepseekApiKey || '').trim()) {
+      delete incoming.deepseekApiKey;
+    }
+    const saved = configStore.save(incoming);
     applyWindowsStartup();
     refreshTrayMenu();
-    return saved;
+    return { ...saved, deepseekApiKey: '', hasDeepseekApiKey: !!saved.deepseekApiKey };
   });
   ipcMain.handle('folder:choose', async () => {
     const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory'] });
