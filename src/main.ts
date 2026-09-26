@@ -265,6 +265,16 @@ async function processConfiguredSlots() {
       await executeScheduledJob(jobId, draft);
     } catch (error) {
       const info = errorInfo(error);
+      const existing = db.getScheduledJob(jobId);
+      if (existing && existing.status === 'pending') {
+        db.updateScheduledJob(jobId, {
+          status: 'failed',
+          errorCode: info.code,
+          errorMessage: info.message,
+          completed: true
+        });
+        logger.write('SCHEDULE_PREPARE_FAILED', { jobKey, code: info.code });
+      }
       if (info.code === 'AI_ERROR') notify('Auto Social Minh Điến', '🤖 AI không tạo được bài.');
     }
   }
@@ -383,6 +393,7 @@ async function postDraft(draft: DraftPost) {
       db.markPost(draft.productName, draft.productFolder, draft.caption, draft.images, 'prepared', undefined, {
         mode: 'test', aiOriginal: draft.aiOriginal, userFinal: draft.caption
       });
+      db.addLearning(draft.productName, draft.aiOriginal || draft.caption, draft.caption);
       status('🧪 TEST MODE: Bài đã được chuẩn bị. Hãy kiểm tra và tự bấm Đăng.');
     }
     return result;
