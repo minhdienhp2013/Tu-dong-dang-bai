@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "npm run build:ts && electron .",
     "build:ts": "tsc",
-    "build": "npm run build:ts && electron-builder --win nsis",
+    "build": "npm run build:ts && electron-builder --win nsis --publish never",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
