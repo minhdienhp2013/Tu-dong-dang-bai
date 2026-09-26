@@ -74,12 +74,13 @@ $('addCategoryBtn').onclick=()=>openCategoryDialog(null);
 function openCategoryDialog(id){
   state.editingCategoryId=id;
   const c=id?state.categories.find(x=>x.id===id):null;
-  $('categoryDialogTitle').textContent=id?'Sửa danh mục':'Thêm danh mục';
+  $('categoryDialogTitle').textContent=id?'Sửa danh mục':'Thêm danh mục';$('deleteCategoryDialogBtn').classList.toggle('hidden',!id);
   $('categoryNameInput').value=c?.name||'';
   $('categoryParentSelect').innerHTML=buildCategoryOptions(false,id);
   $('categoryParentSelect').value=c?.parent_id||'';
   $('categoryDialog').showModal();
 }
+$('deleteCategoryDialogBtn').onclick=async()=>{if(!state.editingCategoryId)return;if(!confirm('Xóa danh mục này? Sản phẩm bên trong sẽ chuyển về chưa phân loại, mục con sẽ trở thành danh mục gốc.'))return;await window.autoSocial.deleteCategory(state.editingCategoryId);$('categoryDialog').close();state.editingCategoryId=null;state.selectedCategoryId=null;await loadCategories();await loadProducts();};
 $('saveCategoryDialogBtn').onclick=async e=>{
   e.preventDefault();
   const name=$('categoryNameInput').value.trim();
