@@ -1,0 +1,27 @@
+# Dependencies / build
+node_modules/
+dist/
+release/
+out/
+*.log
+logs/
+
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# Local app data / sessions
+*.db
+*.sqlite
+*.sqlite3
+config.json
+facebook-browser-profile/
+chrome-profile/
+user-data/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
