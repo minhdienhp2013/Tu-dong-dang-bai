@@ -295,12 +295,16 @@ export class AppDb {
     );
   }
 
+  getScheduledJob(id: number) {
+    return this.db.prepare('SELECT * FROM scheduled_jobs WHERE id = ?').get(id) as any;
+  }
+
   getRetryableJobs(now: string) {
     return this.db.prepare(`
       SELECT * FROM scheduled_jobs
       WHERE status = 'failed'
         AND error_code = 'NETWORK_ERROR'
-        AND retry_count < 2
+        AND retry_count <= 2
         AND next_retry_at IS NOT NULL
         AND next_retry_at <= ?
       ORDER BY next_retry_at
