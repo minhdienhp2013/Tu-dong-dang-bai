@@ -749,7 +749,10 @@ if (gotSingleInstanceLock) {
     registerIpc();
 
     const hiddenArg = process.argv.includes('--hidden');
-    createWindow(!hiddenArg && !configStore.load().startMinimized);
+    const showArg = process.argv.includes('--show');
+    // Mở thủ công bằng launcher phải luôn hiện cửa sổ, kể cả khi
+    // người dùng đã bật "Khởi động ẩn xuống tray" trong Cài đặt.
+    createWindow(showArg || (!hiddenArg && !configStore.load().startMinimized));
 
     scheduler.start(async () => {
       await processNetworkRetries();
