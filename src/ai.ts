@@ -1,21 +1,5 @@
-import fs from 'fs';
-import path from 'path';
-import type { AiContentResult, AppConfig, LearningRecord, ProductFolder, ProductImageRecord, ProductRecord } from './types';
+import type { AiContentResult, AppConfig, LearningRecord, ProductImageRecord, ProductRecord } from './types';
 import { FacebookAutomationError } from './facebook/errors';
-
-function loadExamplesFromRoot(root: string): string {
-  const candidates = [
-    path.join(root, '_phong-cach', 'bai-mau.txt'),
-    path.join(root, '_phong-cach', 'examples.txt'),
-    path.join(root, 'bai-mau.txt')
-  ];
-  for (const file of candidates) {
-    if (fs.existsSync(file)) {
-      try { return fs.readFileSync(file, 'utf8').slice(0, 12000); } catch { }
-    }
-  }
-  return '';
-}
 
 function learningBlock(rows: LearningRecord[]) {
   if (!rows.length) return '';
@@ -94,14 +78,12 @@ export async function generateProductContent(
   config: AppConfig,
   product: ProductRecord,
   images: ProductImageRecord[],
-  examplesRoot?: string,
   learning: LearningRecord[] = [],
   stylePrompt?: string
 ): Promise<AiContentResult> {
   const imageNotes = images.filter(i => i.active)
     .map((i, idx) => 'Ảnh ' + (idx + 1) + ': ' + (i.note?.trim() || '(không có ghi chú)'))
     .join('\n');
-  const examples = examplesRoot ? loadExamplesFromRoot(examplesRoot) : '';
   const edits = learningBlock(learning);
   const user =
     'Tạo 1 bài đăng Facebook cá nhân cho mặt hàng sau.\n\n' +
@@ -110,7 +92,6 @@ export async function generateProductContent(
     'THÔNG TIN SẢN PHẨM ĐƯỢC PHÉP DÙNG:\n' + (product.info_text || '(không có)') + '\n\n' +
     'HASHTAG MẶC ĐỊNH:\n' + (product.default_hashtags || '(không có)') + '\n\n' +
     'GHI CHÚ TỪNG ẢNH:\n' + (imageNotes || '(không có)') + '\n\n' +
-    (examples ? 'BÀI MẪU PHONG CÁCH:\n' + examples + '\n\n' : '') +
     (edits ? 'CÁC VÍ DỤ NGƯỜI DÙNG ĐÃ SỬA AI TRƯỚC ĐÂY:\n' + edits + '\n\n' : '') +
     'QUY TẮC:\n' +
     '- Chỉ dùng dữ kiện có trong phần trên.\n' +
@@ -129,27 +110,3 @@ export async function generateProductContent(
   return result;
 }
 
-export async function generateCaption(
-  config: AppConfig,
-  product: ProductFolder,
-  learning: LearningRecord[] = [],
-  stylePrompt?: string
-): Promise<string> {
-  const examples = loadExamplesFromRoot(path.dirname(product.folderPath));
-  const edits = learningBlock(learning);
-  const user =
-    'Hãy viết đúng 1 caption Facebook cá nhân để bán mặt hàng dưới đây.\n\n' +
-    'Tên thư mục / tên mặt hàng: ' + product.name + '\n' +
-    'Thông tin bổ sung do người dùng cung cấp:\n' + (product.infoText || '(không có)') + '\n\n' +
-    (examples ? 'Một số bài mẫu phong cách của người dùng:\n' + examples + '\n\n' : '') +
-    (edits ? 'Một số lần người dùng đã sửa caption AI:\n' + edits + '\n\n' : '') +
-    'Quy tắc bắt buộc:\n' +
-    '- Chỉ dựa vào tên và thông tin đã cung cấp.\n' +
-    '- Không bịa thông số kỹ thuật, chất liệu, giá, bảo hành, xuất xứ hay khuyến mại.\n' +
-    '- Nếu thiếu dữ liệu, viết ngắn tự nhiên.\n' +
-    '- Chỉ trả về nội dung caption, không giải thích.';
-
-  const out = await callAi(config, stylePrompt || config.stylePrompt, user);
-  if (!out) throw new FacebookAutomationError('AI_ERROR', 'AI không trả về caption.');
-  return out;
-}
