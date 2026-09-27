@@ -78,7 +78,7 @@ async function generateDraft(){
     currentProducts=await window.autoSocial.scan();
     renderDraftImages();
     setStatus('✅ Đã tạo bài. Hãy kiểm tra nội dung và ảnh.');
-  }catch(e){setStatus('❌ '+e.message);alert(e.message);}
+  }catch(e){const msg=friendlyError(e);setStatus('❌ '+msg);alert(msg);}
 }
 $('generateBtn').onclick=generateDraft;
 $('closeDraftBtn').onclick=()=>{$('draftBox').classList.add('hidden');};

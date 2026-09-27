@@ -1,3 +1,4 @@
+import fs from 'fs';
 import path from 'path';
 import {
   app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, Tray
@@ -117,8 +118,51 @@ function refreshTrayMenu() {
   ]));
 }
 
+function normalizeProductName(name: string) {
+  return name.trim().toLocaleLowerCase('vi');
+}
+
+function getCatalogProducts(): ProductFolder[] {
+  return db.listProducts()
+    .filter(product => !!product.active)
+    .map(product => {
+      const rows = db.listImages(product.id)
+        .filter(image => !!image.active && fs.existsSync(image.file_path));
+      const images = rows.map(image => image.file_path);
+      const notes = rows
+        .map((image, index) => image.note?.trim() ? `Ảnh ${index + 1}: ${image.note.trim()}` : '')
+        .filter(Boolean)
+        .join('\n');
+
+      const infoText = [
+        product.description?.trim(),
+        product.info_text?.trim(),
+        product.default_hashtags?.trim() ? `Hashtag gợi ý: ${product.default_hashtags.trim()}` : '',
+        notes ? `Ghi chú ảnh:\n${notes}` : ''
+      ].filter(Boolean).join('\n\n');
+
+      const productKey = `catalog:${product.id}`;
+      return {
+        name: product.name,
+        folderPath: productKey,
+        infoText,
+        images,
+        unusedImages: images.filter(image => !db.imageUsed(image)),
+        lastPostedAt: db.getLastPostedAt(productKey)
+      } satisfies ProductFolder;
+    })
+    .filter(product => product.images.length > 0);
+}
+
 function getProducts() {
-  return scanProducts(configStore.load().rootFolder, db);
+  const catalog = getCatalogProducts();
+  const catalogNames = new Set(catalog.map(product => normalizeProductName(product.name)));
+  const folderProducts = scanProducts(configStore.load().rootFolder, db)
+    .filter(product => !catalogNames.has(normalizeProductName(product.name)));
+
+  // Sản phẩm quản lý trực tiếp trong app là nguồn chính.
+  // Kho thư mục local chỉ bổ sung các mặt hàng chưa có trong Content Manager.
+  return [...catalog, ...folderProducts];
 }
 
 function selectedStylePrompt() {
@@ -136,7 +180,7 @@ async function makeDraft(folderPath?: string): Promise<DraftPost> {
   if (!product) product = chooseEligibleProduct(products, cfg.daysBeforeRepeatProduct);
   if (!product) {
     notify('Auto Social Minh Điến', '📂 Không còn sản phẩm phù hợp để đăng.');
-    throw new Error('Không có mặt hàng đủ điều kiện để đăng.');
+    throw new Error('Không có mặt hàng đủ điều kiện để đăng. Hãy kiểm tra sản phẩm đang bật, có ít nhất 1 ảnh đang dùng và ảnh vẫn còn tồn tại trên máy.');
   }
 
   const images = chooseImages(product, cfg.imagesPerPost, db, cfg.imageReuseAfterDays);
@@ -255,7 +299,7 @@ function slotDue(slot: string, now: Date) {
 
 async function processConfiguredSlots() {
   const cfg = configStore.load();
-  if (!cfg.autoPostEnabled || cfg.schedulerPaused || !cfg.rootFolder) return;
+  if (!cfg.autoPostEnabled || cfg.schedulerPaused) return;
   const now = new Date();
 
   for (const slot of cfg.postingTimes) {

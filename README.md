@@ -1,4 +1,4 @@
-# Auto Social Minh Điến — v0.2.3
+# Auto Social Minh Điến — v0.2.4
 
 Ứng dụng Windows desktop local-first để:
 
@@ -243,7 +243,7 @@ Kết quả nằm trong:
 
 ```text
 release/
-  Auto Social Minh Dien Setup 0.2.3.exe
+  Auto Social Minh Dien Setup 0.2.4.exe
 ```
 
 Build dùng `--publish never`, nên không cần `GH_TOKEN` chỉ để đóng gói installer.
@@ -325,3 +325,21 @@ Từ v0.2.3, nút **Mở Facebook để đăng nhập** không dùng Playwright.
 - Sau khi đăng nhập/xác minh xong, đóng toàn bộ cửa sổ trình duyệt đó rồi mới bấm **Kiểm tra trạng thái**.
 - TEST/AUTO chỉ chạy sau khi session đã được tạo thủ công.
 - App không tự vượt hoặc né cơ chế xác minh của Facebook.
+
+
+## Sản phẩm trong Content Manager dùng trực tiếp cho TEST/AUTO
+
+Từ v0.2.4, nút **Tạo bài** không còn chỉ phụ thuộc vào thư mục kho ảnh.
+
+Nguồn sản phẩm theo thứ tự:
+1. Sản phẩm đang bật trong tab **Sản phẩm**, có ít nhất một ảnh đang bật và file ảnh còn tồn tại trên máy.
+2. Các thư mục sản phẩm trong kho local chưa trùng tên với sản phẩm đã quản lý trong app.
+
+Vì vậy:
+- thêm sản phẩm trong app;
+- thêm ảnh cho sản phẩm;
+- bật trạng thái sản phẩm/ảnh;
+- có thể TEST ngay, không cần tạo thêm thư mục riêng;
+- scheduler cũng có thể chạy từ Content Manager dù chưa cấu hình rootFolder.
+
+Nếu một sản phẩm trong Content Manager trùng tên với thư mục local, bản trong Content Manager được ưu tiên để tránh chọn trùng.
