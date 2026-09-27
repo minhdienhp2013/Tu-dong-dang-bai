@@ -1,3 +1,8 @@
+export const FACEBOOK_URLS = {
+  home: 'https://www.facebook.com/',
+  personalProfile: 'https://www.facebook.com/me/'
+};
+
 export const FACEBOOK_SELECTORS = {
   composerTexts: [
     'Bạn đang nghĩ gì?',
@@ -42,4 +47,16 @@ export const LOGIN_PAGE_SIGNALS = [
   'đăng nhập facebook',
   'email or phone number',
   'email hoặc số điện thoại'
+];
+
+export const POST_FAILURE_SIGNALS = [
+  'we couldn\'t post',
+  'couldn\'t post',
+  'unable to post',
+  'something went wrong',
+  'try again later',
+  'không thể đăng',
+  'không đăng được',
+  'đã xảy ra lỗi',
+  'vui lòng thử lại sau'
 ];

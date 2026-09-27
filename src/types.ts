@@ -7,6 +7,7 @@ export type PostErrorCode =
   | 'NOT_LOGGED_IN'
   | 'SECURITY_CHECK'
   | 'UPLOAD_ERROR'
+  | 'POST_UNCERTAIN'
   | 'UNKNOWN';
 
 export type AppConfig = {
@@ -150,6 +151,8 @@ export type LearningRecord = {
 export type FacebookPublishResult = {
   prepared: boolean;
   posted: boolean;
+  submitted?: boolean;
+  confirmation?: 'prepared' | 'confirmed' | 'uncertain';
 };
 
 export type DashboardSummary = {
