@@ -216,20 +216,39 @@ async function waitForPostConfirmation(page: Page, composer: Locator) {
 }
 
 async function launch(profileDir: string): Promise<BrowserContext> {
-  try {
-    return await chromium.launchPersistentContext(profileDir, {
-      channel: 'chrome',
-      headless: false,
-      viewport: null,
-      args: ['--start-maximized']
-    });
-  } catch (error) {
-    const code = classifyUnknownError(error);
+  const channels: Array<'chrome' | 'msedge'> = ['chrome', 'msedge'];
+  const errors: string[] = [];
+
+  for (const channel of channels) {
+    try {
+      return await chromium.launchPersistentContext(profileDir, {
+        channel,
+        headless: false,
+        viewport: null,
+        args: ['--start-maximized'],
+        // Playwright có thể thêm --no-sandbox vào Chromium. Trên Windows không cần
+        // hạ sandbox; bỏ cờ này để giữ bảo vệ trình duyệt và tránh banner cảnh báo.
+        ignoreDefaultArgs: ['--no-sandbox']
+      });
+    } catch (error) {
+      errors.push(`${channel}: ${String((error as any)?.message || error)}`);
+    }
+  }
+
+  const detail = errors.join(' | ');
+  const lower = detail.toLowerCase();
+  if (/user data directory|profile.*in use|processsingleton|singletonlock|browser is already running/.test(lower)) {
     throw new FacebookAutomationError(
-      code,
-      'Không thể mở Google Chrome: ' + String((error as any)?.message || error)
+      'UNKNOWN',
+      'Hồ sơ Facebook của ứng dụng đang được một cửa sổ trình duyệt khác sử dụng. Hãy đóng cửa sổ Chrome/Edge do Auto Social mở rồi thử lại.'
     );
   }
+
+  const code = classifyUnknownError(detail);
+  throw new FacebookAutomationError(
+    code,
+    'Không mở được trình duyệt Facebook. Auto Social đã thử Google Chrome và Microsoft Edge. Hãy bảo đảm ít nhất một trong hai trình duyệt có trên máy. Chi tiết: ' + detail
+  );
 }
 
 export async function openFacebookForLogin(profileDir: string): Promise<void> {
