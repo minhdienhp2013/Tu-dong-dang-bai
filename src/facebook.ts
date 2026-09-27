@@ -1,4 +1,6 @@
 import fs from 'fs';
+import path from 'path';
+import { spawn } from 'child_process';
 import { chromium, BrowserContext, Locator, Page } from 'playwright-core';
 import type { FacebookLoginStatus, FacebookPublishResult, RunMode } from './types';
 import {
@@ -216,27 +218,105 @@ async function waitForPostConfirmation(page: Page, composer: Locator) {
 }
 
 async function launch(profileDir: string): Promise<BrowserContext> {
-  try {
-    return await chromium.launchPersistentContext(profileDir, {
-      channel: 'chrome',
-      headless: false,
-      viewport: null,
-      args: ['--start-maximized']
-    });
-  } catch (error) {
-    const code = classifyUnknownError(error);
+  const channels: Array<'chrome' | 'msedge'> = ['chrome', 'msedge'];
+  const errors: string[] = [];
+
+  for (const channel of channels) {
+    try {
+      return await chromium.launchPersistentContext(profileDir, {
+        channel,
+        headless: false,
+        viewport: null,
+        args: ['--start-maximized'],
+        // Playwright có thể thêm --no-sandbox vào Chromium. Trên Windows không cần
+        // hạ sandbox; bỏ cờ này để giữ bảo vệ trình duyệt và tránh banner cảnh báo.
+        ignoreDefaultArgs: ['--no-sandbox']
+      });
+    } catch (error) {
+      errors.push(`${channel}: ${String((error as any)?.message || error)}`);
+    }
+  }
+
+  const detail = errors.join(' | ');
+  const lower = detail.toLowerCase();
+  if (/user data directory|profile.*in use|processsingleton|singletonlock|browser is already running/.test(lower)) {
     throw new FacebookAutomationError(
-      code,
-      'Không thể mở Google Chrome: ' + String((error as any)?.message || error)
+      'UNKNOWN',
+      'Hồ sơ Facebook của ứng dụng đang được một cửa sổ trình duyệt khác sử dụng. Hãy đóng cửa sổ Chrome/Edge do Auto Social mở rồi thử lại.'
     );
   }
+
+  const code = classifyUnknownError(detail);
+  throw new FacebookAutomationError(
+    code,
+    'Không mở được trình duyệt Facebook. Auto Social đã thử Google Chrome và Microsoft Edge. Hãy bảo đảm ít nhất một trong hai trình duyệt có trên máy. Chi tiết: ' + detail
+  );
+}
+
+function findInstalledBrowser(): { name: string; executable: string } | null {
+  const candidates = [
+    {
+      name: 'Microsoft Edge',
+      executable: path.join(process.env.PROGRAMFILES || '', 'Microsoft', 'Edge', 'Application', 'msedge.exe')
+    },
+    {
+      name: 'Microsoft Edge',
+      executable: path.join(process.env['PROGRAMFILES(X86)'] || '', 'Microsoft', 'Edge', 'Application', 'msedge.exe')
+    },
+    {
+      name: 'Microsoft Edge',
+      executable: path.join(process.env.LOCALAPPDATA || '', 'Microsoft', 'Edge', 'Application', 'msedge.exe')
+    },
+    {
+      name: 'Google Chrome',
+      executable: path.join(process.env.PROGRAMFILES || '', 'Google', 'Chrome', 'Application', 'chrome.exe')
+    },
+    {
+      name: 'Google Chrome',
+      executable: path.join(process.env['PROGRAMFILES(X86)'] || '', 'Google', 'Chrome', 'Application', 'chrome.exe')
+    },
+    {
+      name: 'Google Chrome',
+      executable: path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'Application', 'chrome.exe')
+    }
+  ];
+
+  return candidates.find(item => item.executable && fs.existsSync(item.executable)) || null;
 }
 
 export async function openFacebookForLogin(profileDir: string): Promise<void> {
-  const context = await launch(profileDir);
-  const page = context.pages()[0] || await context.newPage();
-  await page.goto(FACEBOOK_URLS.home, { waitUntil: 'domcontentloaded', timeout: 60000 });
-  // Chủ tài khoản tự đăng nhập và đóng cửa sổ Chrome sau khi xong.
+  const browser = findInstalledBrowser();
+  if (!browser) {
+    throw new FacebookAutomationError(
+      'UNKNOWN',
+      'Không tìm thấy Microsoft Edge hoặc Google Chrome trên máy. Hãy cài một trong hai trình duyệt rồi thử lại.'
+    );
+  }
+
+  fs.mkdirSync(profileDir, { recursive: true });
+
+  try {
+    const child = spawn(browser.executable, [
+      `--user-data-dir=${profileDir}`,
+      '--profile-directory=Default',
+      '--start-maximized',
+      FACEBOOK_URLS.home
+    ], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: false
+    });
+    child.unref();
+  } catch (error) {
+    throw new FacebookAutomationError(
+      'UNKNOWN',
+      `Không thể mở ${browser.name} để đăng nhập Facebook: ${String((error as any)?.message || error)}`
+    );
+  }
+
+  // Luồng đăng nhập cố ý KHÔNG dùng Playwright. Người dùng đăng nhập/xác minh
+  // trong trình duyệt thật, sau đó đóng toàn bộ cửa sổ browser trước khi app
+  // kiểm tra session hoặc chạy TEST/AUTO bằng profile này.
 }
 
 export async function checkFacebookLogin(profileDir: string): Promise<FacebookLoginStatus> {

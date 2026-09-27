@@ -9,7 +9,12 @@ let currentProducts = [];
 let currentHistoryCaption = '';
 
 function esc(s=''){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c])); }
-function setStatus(msg){ $('status').textContent = msg; }
+function setStatus(msg){ const el=$('status'); el.textContent=msg; el.title=msg; }
+function friendlyError(error){
+  let msg=String(error?.message||error||'Lỗi không xác định');
+  msg=msg.replace(/^Error invoking remote method '[^']+':\s*/i,'').replace(/^Error:\s*/i,'');
+  return msg;
+}
 function fmtDate(v){ if(!v) return '—'; try{return new Date(v).toLocaleString('vi-VN');}catch{return v;} }
 function fileUrl(p){ return 'file:///' + encodeURI(String(p).replace(/\\/g,'/')); }
 function statusLabel(s){ return ({draft:'Nháp',pending:'Chờ',preparing:'Đang chuẩn bị',approved:'Đã duyệt',used:'Đã dùng',scheduled:'Đã lên lịch',posting:'Đang đăng',prepared:'TEST đã chuẩn bị',posted:'Đã đăng',failed:'Lỗi',uncertain:'Cần kiểm tra',cancelled:'Đã hủy'})[s] || s; }
@@ -200,7 +205,17 @@ $('aiProvider').onchange=providerUI;
 async function loadSettings(){const c=await window.autoSocial.getConfig();$('rootFolder').value=c.rootFolder||'';$('runMode').value=c.runMode||'test';$('autoPostEnabled').checked=!!c.autoPostEnabled;$('postingTimes').value=(c.postingTimes||[]).join(', ');$('autoStartWindows').checked=!!c.autoStartWindows;$('startMinimized').checked=!!c.startMinimized;$('minimizeToTray').checked=!!c.minimizeToTray;$('keepRunningInTray').checked=!!c.keepRunningInTray;$('aiProvider').value=c.aiProvider||'deepseek';$('deepseekApiKey').value='';$('deepseekApiKey').placeholder=c.hasDeepseekApiKey?'Đã lưu an toàn — để trống để giữ nguyên':'sk-...';$('deepseekModel').value=c.deepseekModel||'deepseek-chat';$('ollamaUrl').value=c.ollamaUrl||'http://127.0.0.1:11434';$('ollamaModel').value=c.ollamaModel||'qwen2.5:3b';$('stylePrompt').value=c.stylePrompt||'';$('repeatDays').value=c.daysBeforeRepeatProduct??7;$('imageReuseAfterDays').value=c.imageReuseAfterDays??30;$('imagesPerPost').value=c.imagesPerPost??4;providerUI();}
 $('chooseFolder').onclick=async()=>{const c=await window.autoSocial.chooseFolder();if(c)$('rootFolder').value=c.rootFolder||'';};
 $('saveSettingsBtn').onclick=async()=>{await window.autoSocial.saveConfig({runMode:$('runMode').value,autoPostEnabled:$('autoPostEnabled').checked,postingTimes:$('postingTimes').value.split(',').map(x=>x.trim()).filter(Boolean),autoStartWindows:$('autoStartWindows').checked,startMinimized:$('startMinimized').checked,minimizeToTray:$('minimizeToTray').checked,keepRunningInTray:$('keepRunningInTray').checked,aiProvider:$('aiProvider').value,deepseekApiKey:$('deepseekApiKey').value.trim(),deepseekModel:$('deepseekModel').value.trim(),ollamaUrl:$('ollamaUrl').value.trim(),ollamaModel:$('ollamaModel').value.trim(),stylePrompt:$('stylePrompt').value.trim(),daysBeforeRepeatProduct:Number($('repeatDays').value||7),imageReuseAfterDays:Number($('imageReuseAfterDays').value||30),imagesPerPost:Number($('imagesPerPost').value||4)});setStatus('✅ Đã lưu cài đặt');await loadDashboard();};
-$('loginBtn').onclick=async()=>{setStatus('🌐 Chrome đang mở. Hãy đăng nhập Facebook rồi đóng Chrome khi xong.');try{await window.autoSocial.openLogin();}catch(e){setStatus('❌ '+e.message);}};
+$('loginBtn').onclick=async()=>{
+  setStatus('🌐 Đang mở trình duyệt Facebook...');
+  try{
+    await window.autoSocial.openLogin();
+    setStatus('🌐 Trình duyệt thật đã mở. Hãy đăng nhập/xác minh Facebook, sau đó đóng toàn bộ cửa sổ trình duyệt này rồi bấm Kiểm tra trạng thái.');
+  }catch(e){
+    const msg=friendlyError(e);
+    setStatus('❌ '+msg);
+    alert(msg);
+  }
+};
 
 window.autoSocial.onStatus(setStatus);
 (async()=>{try{await loadSettings();await loadCategories();await loadProducts();await loadDashboard();await loadHistory();}catch(e){setStatus('❌ '+e.message);}})();
