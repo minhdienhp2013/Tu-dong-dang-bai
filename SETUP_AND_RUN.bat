@@ -33,7 +33,7 @@ if errorlevel 1 (
 )
 
 echo Dang cai thu vien...
-call npm install
+call npm.cmd install
 if errorlevel 1 (
   echo.
   echo [LOI] npm install that bai.
@@ -43,6 +43,6 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo Dang mo ung dung...
-call npm run dev
+echo Dang mo ung dung o che do hien cua so...
+call npm.cmd run start:visible
 pause

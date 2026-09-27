@@ -1,4 +1,4 @@
-# Auto Social Minh Điến — v0.3.0
+# Auto Social Minh Điến — v0.3.1
 
 Ứng dụng Windows desktop để quản lý sản phẩm, ảnh, nội dung và đăng Facebook cá nhân trong **một phần mềm duy nhất**.
 
@@ -112,7 +112,7 @@ Kết quả:
 
 ```text
 release/
-  Auto Social Minh Dien Setup 0.3.0.exe
+  Auto Social Minh Dien Setup 0.3.1.exe
 ```
 
 ## Nghiệm thu trước AUTO
@@ -135,3 +135,31 @@ Chưa triển khai:
 - Fanpage;
 - lịch calendar cả tháng;
 - mạng xã hội khác.
+
+
+## Mở ứng dụng bằng 1 lần bấm
+
+Trong thư mục source có file:
+
+```text
+MO_AUTO_SOCIAL.bat
+```
+
+Chỉ cần bấm đúp file này.
+
+Launcher sẽ:
+- kiểm tra Node.js 24;
+- nếu thiếu Electron thì tự cài dependency cần thiết;
+- compile TypeScript;
+- mở Electron với `--show` để luôn hiện cửa sổ;
+- nếu Auto Social đang chạy ẩn dưới system tray, lần mở thứ hai sẽ gọi cửa sổ hiện lại;
+- nếu app đã thoát hẳn, launcher mở một phiên mới;
+- lỗi launcher được ghi tại `%TEMP%\auto-social-launch.log`.
+
+Lệnh tương đương:
+
+```powershell
+npm.cmd run start:visible
+```
+
+Cấu hình **Khởi động ẩn xuống tray** không ngăn launcher thủ công hiển thị cửa sổ.
