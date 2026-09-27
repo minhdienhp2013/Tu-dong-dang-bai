@@ -209,7 +209,7 @@ $('loginBtn').onclick=async()=>{
   setStatus('🌐 Đang mở trình duyệt Facebook...');
   try{
     await window.autoSocial.openLogin();
-    setStatus('🌐 Trình duyệt đã mở. Hãy đăng nhập Facebook rồi đóng cửa sổ khi xong.');
+    setStatus('🌐 Trình duyệt thật đã mở. Hãy đăng nhập/xác minh Facebook, sau đó đóng toàn bộ cửa sổ trình duyệt này rồi bấm Kiểm tra trạng thái.');
   }catch(e){
     const msg=friendlyError(e);
     setStatus('❌ '+msg);
