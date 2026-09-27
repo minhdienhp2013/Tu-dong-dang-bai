@@ -224,7 +224,7 @@ Các lỗi chính:
 
 Yêu cầu:
 - Windows 10/11
-- Node.js 22+
+- Node.js 24.x
 - Google Chrome
 
 ```bash
@@ -279,8 +279,9 @@ Các đường dẫn này đã được chặn trong `.gitignore`.
 
 ## CI
 
-GitHub Actions chạy trên Windows:
+GitHub Actions chạy trên Windows với **Node.js 24**:
 - `npm install`;
+- kiểm tra `better-sqlite3` load được thật trên Node 24;
 - TypeScript compile;
 - build NSIS installer;
 - upload installer thành artifact để tải test.
@@ -299,3 +300,14 @@ Chưa triển khai trong nhánh này:
 - social network khác.
 
 Các phần đó được giữ lại cho bước sau để không làm tăng rủi ro khi luồng trang cá nhân chưa được nghiệm thu thực tế.
+
+
+## Node.js 24
+
+Từ nhánh nâng cấp Node 24:
+- runtime development chuẩn là **Node.js 24.x**;
+- `better-sqlite3` dùng dòng **13.x**;
+- setup script từ chối Node major khác 24 để tránh lỗi native module khó hiểu;
+- CI Windows kiểm tra trực tiếp `require('better-sqlite3')` và tạo database in-memory trước khi build app.
+
+Nếu trước đó đã chạy `npm install` bằng Node khác, nên xóa `node_modules` và `package-lock.json` rồi cài lại.
