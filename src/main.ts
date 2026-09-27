@@ -1,17 +1,17 @@
 import fs from 'fs';
 import path from 'path';
+import { randomUUID } from 'crypto';
 import {
   app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, Tray
 } from 'electron';
 import { ConfigStore } from './config';
 import { AppDb } from './db';
-import { scanProducts, chooseEligibleProduct, chooseImages, inventoryStats } from './scanner';
-import { generateCaption, generateProductContent } from './ai';
+import { generateProductContent } from './ai';
 import { checkFacebookLogin, openFacebookForLogin, publishToFacebook } from './facebook';
 import { FacebookAutomationError, classifyUnknownError, isAutoRetryable } from './facebook/errors';
 import { Scheduler } from './scheduler';
 import { AppLogger } from './logger';
-import type { DraftPost, PostErrorCode, ProductFolder, RunMode, SocialPostRecord } from './types';
+import type { ContentDraftRecord, DraftPost, PostErrorCode, ProductImageRecord, ProductRecord, RunMode, SocialPostRecord } from './types';
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
@@ -118,51 +118,105 @@ function refreshTrayMenu() {
   ]));
 }
 
-function normalizeProductName(name: string) {
-  return name.trim().toLocaleLowerCase('vi');
+function mediaRoot() {
+  return path.join(app.getPath('userData'), 'media', 'products');
 }
 
-function getCatalogProducts(): ProductFolder[] {
+function productMediaDir(productId: number) {
+  return path.join(mediaRoot(), String(productId));
+}
+
+function isManagedMediaPath(filePath: string) {
+  const rel = path.relative(mediaRoot(), filePath);
+  return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel);
+}
+
+function copyImageIntoLibrary(productId: number, sourcePath: string) {
+  if (!fs.existsSync(sourcePath)) throw new Error('Không tìm thấy ảnh đã chọn: ' + sourcePath);
+  const ext = path.extname(sourcePath).toLowerCase();
+  if (!['.jpg', '.jpeg', '.png', '.webp'].includes(ext)) {
+    throw new Error('Định dạng ảnh không hỗ trợ: ' + ext);
+  }
+  const dir = productMediaDir(productId);
+  fs.mkdirSync(dir, { recursive: true });
+  const destination = path.join(dir, randomUUID() + ext);
+  fs.copyFileSync(sourcePath, destination);
+  return destination;
+}
+
+function migrateLegacyProductImages() {
+  let migrated = 0;
+  for (const product of db.listProducts()) {
+    for (const image of db.listImages(product.id)) {
+      if (!image.file_path || isManagedMediaPath(image.file_path) || !fs.existsSync(image.file_path)) continue;
+      try {
+        const destination = copyImageIntoLibrary(product.id, image.file_path);
+        db.updateImagePath(image.id, destination);
+        migrated++;
+      } catch {
+        // Giữ bản ghi cũ nếu file nguồn không thể copy; UI sẽ cho người dùng thêm lại ảnh.
+      }
+    }
+  }
+  return migrated;
+}
+
+type PostingCandidate = {
+  product: ProductRecord;
+  content: ContentDraftRecord;
+  images: ProductImageRecord[];
+  lastPostedAt: string | null;
+};
+
+function usableImages(rows: ProductImageRecord[], reuseAfterDays: number, count: number) {
+  const active = rows.filter(image => !!image.active && fs.existsSync(image.file_path));
+  const unused = active.filter(image => Number(image.used_count || 0) === 0);
+  if (unused.length) return unused.slice(0, Math.max(1, count));
+
+  const cutoff = Date.now() - reuseAfterDays * 86400000;
+  return active
+    .filter(image => !image.last_used_at || new Date(image.last_used_at).getTime() <= cutoff)
+    .slice(0, Math.max(1, count));
+}
+
+function getPostingCandidates(): PostingCandidate[] {
   return db.listProducts()
     .filter(product => !!product.active)
     .map(product => {
-      const rows = db.listImages(product.id)
-        .filter(image => !!image.active && fs.existsSync(image.file_path));
-      const images = rows.map(image => image.file_path);
-      const notes = rows
-        .map((image, index) => image.note?.trim() ? `Ảnh ${index + 1}: ${image.note.trim()}` : '')
-        .filter(Boolean)
-        .join('\n');
+      const contents = db.listContents(product.id).filter(content => content.status !== 'used');
+      const content = contents.find(item => item.status === 'approved') || contents.find(item => item.status === 'draft');
+      if (!content) return null;
 
-      const infoText = [
-        product.description?.trim(),
-        product.info_text?.trim(),
-        product.default_hashtags?.trim() ? `Hashtag gợi ý: ${product.default_hashtags.trim()}` : '',
-        notes ? `Ghi chú ảnh:\n${notes}` : ''
-      ].filter(Boolean).join('\n\n');
+      const images = db.listImages(product.id).filter(image => !!image.active && fs.existsSync(image.file_path));
+      if (!images.length) return null;
 
-      const productKey = `catalog:${product.id}`;
       return {
-        name: product.name,
-        folderPath: productKey,
-        infoText,
+        product,
+        content,
         images,
-        unusedImages: images.filter(image => !db.imageUsed(image)),
-        lastPostedAt: db.getLastPostedAt(productKey)
-      } satisfies ProductFolder;
+        lastPostedAt: db.getProductLastPostedAt(product.id)
+      } satisfies PostingCandidate;
     })
-    .filter(product => product.images.length > 0);
+    .filter((item): item is PostingCandidate => !!item);
 }
 
-function getProducts() {
-  const catalog = getCatalogProducts();
-  const catalogNames = new Set(catalog.map(product => normalizeProductName(product.name)));
-  const folderProducts = scanProducts(configStore.load().rootFolder, db)
-    .filter(product => !catalogNames.has(normalizeProductName(product.name)));
+function choosePostingCandidate(candidates: PostingCandidate[], daysBeforeRepeat: number, imageReuseAfterDays: number) {
+  const cutoff = Date.now() - daysBeforeRepeat * 86400000;
+  const eligible = candidates.filter(item => {
+    if (item.lastPostedAt && new Date(item.lastPostedAt).getTime() >= cutoff) return false;
+    return usableImages(item.images, imageReuseAfterDays, 1).length > 0;
+  });
 
-  // Sản phẩm quản lý trực tiếp trong app là nguồn chính.
-  // Kho thư mục local chỉ bổ sung các mặt hàng chưa có trong Content Manager.
-  return [...catalog, ...folderProducts];
+  eligible.sort((a, b) => {
+    const aUnused = a.images.some(image => Number(image.used_count || 0) === 0) ? 1 : 0;
+    const bUnused = b.images.some(image => Number(image.used_count || 0) === 0) ? 1 : 0;
+    if (aUnused !== bUnused) return bUnused - aUnused;
+    const aTime = a.lastPostedAt ? new Date(a.lastPostedAt).getTime() : 0;
+    const bTime = b.lastPostedAt ? new Date(b.lastPostedAt).getTime() : 0;
+    return aTime - bTime;
+  });
+
+  return eligible[0] || null;
 }
 
 function selectedStylePrompt() {
@@ -172,30 +226,48 @@ function selectedStylePrompt() {
   return style?.prompt || cfg.stylePrompt;
 }
 
-async function makeDraft(folderPath?: string): Promise<DraftPost> {
+async function makeDraft(productId?: number): Promise<DraftPost> {
   const cfg = configStore.load();
-  const products = getProducts();
-  let product: ProductFolder | null = null;
-  if (folderPath) product = products.find(p => p.folderPath === folderPath) || null;
-  if (!product) product = chooseEligibleProduct(products, cfg.daysBeforeRepeatProduct);
-  if (!product) {
-    notify('Auto Social Minh Điến', '📂 Không còn sản phẩm phù hợp để đăng.');
-    throw new Error('Không có mặt hàng đủ điều kiện để đăng. Hãy kiểm tra sản phẩm đang bật, có ít nhất 1 ảnh đang dùng và ảnh vẫn còn tồn tại trên máy.');
+  const candidates = getPostingCandidates();
+  const preferred = productId ? candidates.find(item => item.product.id === productId) || null : null;
+  const selected = preferred || choosePostingCandidate(candidates, cfg.daysBeforeRepeatProduct, cfg.imageReuseAfterDays);
+
+  if (!selected) {
+    notify('Auto Social Minh Điến', '📦 Chưa có sản phẩm đủ điều kiện để đăng.');
+    throw new Error(
+      'Chưa có sản phẩm đủ điều kiện. Trong app cần: sản phẩm đang hoạt động, ít nhất 1 ảnh đang dùng, ít nhất 1 nội dung Nháp/Đã duyệt, và không nằm trong thời gian chống lặp.'
+    );
   }
 
-  const images = chooseImages(product, cfg.imagesPerPost, db, cfg.imageReuseAfterDays);
-  if (!images.length) throw new Error('Sản phẩm chưa có ảnh đủ điều kiện dùng lại.');
+  const selectedImages = usableImages(selected.images, cfg.imageReuseAfterDays, cfg.imagesPerPost);
+  if (!selectedImages.length) {
+    throw new Error('Ảnh của sản phẩm chưa đủ điều kiện dùng lại theo cài đặt hiện tại.');
+  }
 
-  logger.write('AI_START', { product: product.name });
-  const learning = db.recentLearning(10, product.name);
-  const caption = await generateCaption(cfg, product, learning, selectedStylePrompt());
-  logger.write('AI_SUCCESS', { product: product.name });
+  const caption = [
+    selected.content.title?.trim(),
+    selected.content.caption?.trim(),
+    selected.content.hashtags?.trim()
+  ].filter(Boolean).join('\n\n');
+
+  if (!caption.trim()) throw new Error('Nội dung của sản phẩm đang trống.');
+
+  logger.write('CONTENT_SELECTED', {
+    product: selected.product.name,
+    productId: selected.product.id,
+    contentId: selected.content.id,
+    images: selectedImages.length
+  });
+
   return {
-    productName: product.name,
-    productFolder: product.folderPath,
+    productId: selected.product.id,
+    contentId: selected.content.id,
+    imageIds: selectedImages.map(image => image.id),
+    productName: selected.product.name,
+    productFolder: `catalog:${selected.product.id}`,
     caption,
-    aiOriginal: caption,
-    images,
+    aiOriginal: selected.content.ai_original || selected.content.caption,
+    images: selectedImages.map(image => image.file_path),
     mode: cfg.runMode
   };
 }
