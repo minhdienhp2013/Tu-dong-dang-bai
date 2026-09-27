@@ -272,6 +272,15 @@ async function makeDraft(productId?: number): Promise<DraftPost> {
   };
 }
 
+function resolvedDraftImageIds(draft: DraftPost) {
+  if (draft.productId) {
+    return db.listImages(draft.productId)
+      .filter(image => draft.images.includes(image.file_path))
+      .map(image => image.id);
+  }
+  return draft.imageIds || [];
+}
+
 function errorInfo(error: unknown): { code: PostErrorCode; message: string } {
   if (error instanceof FacebookAutomationError) return { code: error.code, message: error.message };
   return { code: classifyUnknownError(error), message: String((error as any)?.message || error) };
@@ -305,7 +314,8 @@ async function executeScheduledJob(jobId: number, draft: DraftPost) {
       db.markPost(draft.productName, draft.productFolder, draft.caption, draft.images, 'posted', undefined, {
         mode, aiOriginal: draft.aiOriginal, userFinal: draft.caption, jobKey: draft.jobKey || null
       });
-      if (draft.imageIds?.length) db.markImagesUsed(draft.imageIds);
+      const usedImageIds = resolvedDraftImageIds(draft);
+      if (usedImageIds.length) db.markImagesUsed(usedImageIds);
       if (draft.contentId) db.markContentUsed(draft.contentId);
       db.addLearning(draft.productName, draft.aiOriginal || draft.caption, draft.caption);
       logger.write('POST_SUCCESS', { product: draft.productName });
@@ -523,7 +533,8 @@ async function postDraft(draft: DraftPost) {
       db.markPost(draft.productName, draft.productFolder, draft.caption, draft.images, 'posted', undefined, {
         mode, aiOriginal: draft.aiOriginal, userFinal: draft.caption
       });
-      if (draft.imageIds?.length) db.markImagesUsed(draft.imageIds);
+      const usedImageIds = resolvedDraftImageIds(draft);
+      if (usedImageIds.length) db.markImagesUsed(usedImageIds);
       if (draft.contentId) db.markContentUsed(draft.contentId);
       db.addLearning(draft.productName, draft.aiOriginal || draft.caption, draft.caption);
       notify('Auto Social Minh Điến', `✅ Đã đăng ${draft.productName} lên Facebook.`);
