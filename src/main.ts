@@ -206,26 +206,33 @@ async function executeScheduledJob(jobId: number, draft: DraftPost) {
     const info = errorInfo(error);
     const row = db.getScheduledJob(jobId);
     const retryCount = Number(row?.retry_count || 0) + 1;
-    const canRetry = mode === 'auto' && isAutoRetryable(info.code) && retryCount <= 2;
+    const uncertain = info.code === 'POST_UNCERTAIN';
+    const canRetry = !uncertain && mode === 'auto' && isAutoRetryable(info.code) && retryCount <= 2;
 
     db.updateScheduledJob(jobId, {
-      status: 'failed',
+      status: uncertain ? 'uncertain' : 'failed',
       errorCode: info.code,
       errorMessage: info.message,
       retryCount,
       nextRetryAt: canRetry ? retryAt(retryCount) : null
     });
-    db.markPost(draft.productName, draft.productFolder, draft.caption, draft.images, 'failed', info.message, {
+    db.markPost(draft.productName, draft.productFolder, draft.caption, draft.images, uncertain ? 'uncertain' : 'failed', info.message, {
       mode, errorCode: info.code, aiOriginal: draft.aiOriginal, userFinal: draft.caption, jobKey: draft.jobKey || null
     });
-    logger.write('POST_FAILED', { product: draft.productName, code: info.code, retryCount, autoRetry: canRetry });
+    logger.write(uncertain ? 'POST_UNCERTAIN' : 'POST_FAILED', {
+      product: draft.productName, code: info.code, retryCount, autoRetry: canRetry
+    });
 
-    if (info.code === 'SECURITY_CHECK') {
+    if (uncertain) {
+      notify('Auto Social Minh Điến', '⚠ Đã bấm Đăng nhưng chưa xác nhận chắc chắn. Hãy kiểm tra trang cá nhân.');
+      status('⚠ Cần kiểm tra thủ công: ' + info.message);
+    } else if (info.code === 'SECURITY_CHECK') {
       notify('Auto Social Minh Điến', '⚠ Facebook yêu cầu xác minh. Hãy mở ứng dụng và xử lý thủ công.');
+      status(`❌ ${info.message}`);
     } else {
       notify('Auto Social Minh Điến', `❌ Đăng thất bại: ${draft.productName}`);
+      status(`❌ ${info.message}`);
     }
-    status(`❌ ${info.message}`);
     throw error;
   }
 }
@@ -363,12 +370,16 @@ async function publishManagedPost(postId: number) {
     const info = errorInfo(error);
     const latest = db.getSocialPost(postId);
     const nextRetry = Number(latest?.retry_count || 0) + 1;
-    const canRetry = mode === 'auto' && isAutoRetryable(info.code) && nextRetry <= 2;
-    db.updateSocialPostStatus(postId, 'failed', info.message, info.code);
+    const uncertain = info.code === 'POST_UNCERTAIN';
+    const canRetry = !uncertain && mode === 'auto' && isAutoRetryable(info.code) && nextRetry <= 2;
+    db.updateSocialPostStatus(postId, uncertain ? 'uncertain' : 'failed', info.message, info.code);
     db.bumpSocialPostRetry(postId, nextRetry, canRetry ? retryAt(nextRetry) : null);
-    db.addPostAttempt(postId, 'failed', `${info.code}: ${info.message}`);
-    logger.write('MANAGED_POST_FAILED', { postId, code: info.code, retryCount: nextRetry });
-    if (info.code === 'SECURITY_CHECK') notify('Auto Social Minh Điến', '⚠ Facebook yêu cầu xác minh.');
+    db.addPostAttempt(postId, uncertain ? 'uncertain' : 'failed', `${info.code}: ${info.message}`);
+    logger.write(uncertain ? 'MANAGED_POST_UNCERTAIN' : 'MANAGED_POST_FAILED', {
+      postId, code: info.code, retryCount: nextRetry
+    });
+    if (uncertain) notify('Auto Social Minh Điến', '⚠ Bài có trạng thái chưa chắc chắn. Hãy kiểm tra trang cá nhân.');
+    else if (info.code === 'SECURITY_CHECK') notify('Auto Social Minh Điến', '⚠ Facebook yêu cầu xác minh.');
     else notify('Auto Social Minh Điến', '❌ Đăng Facebook thất bại.');
     throw error;
   } finally {
@@ -399,10 +410,15 @@ async function postDraft(draft: DraftPost) {
     return result;
   } catch (error) {
     const info = errorInfo(error);
-    db.markPost(draft.productName, draft.productFolder, draft.caption, draft.images, 'failed', info.message, {
+    const uncertain = info.code === 'POST_UNCERTAIN';
+    db.markPost(draft.productName, draft.productFolder, draft.caption, draft.images, uncertain ? 'uncertain' : 'failed', info.message, {
       mode, errorCode: info.code, aiOriginal: draft.aiOriginal, userFinal: draft.caption
     });
-    if (info.code === 'SECURITY_CHECK') notify('Auto Social Minh Điến', '⚠ Facebook yêu cầu xác minh.');
+    if (uncertain) {
+      notify('Auto Social Minh Điến', '⚠ Đã bấm Đăng nhưng chưa xác nhận chắc chắn. Hãy kiểm tra trang cá nhân.');
+    } else if (info.code === 'SECURITY_CHECK') {
+      notify('Auto Social Minh Điến', '⚠ Facebook yêu cầu xác minh.');
+    }
     throw error;
   } finally {
     manualPosting = false;
