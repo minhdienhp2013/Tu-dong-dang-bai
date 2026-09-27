@@ -251,4 +251,8 @@ $('loginBtn').onclick=async()=>{
 };
 
 window.autoSocial.onStatus(setStatus);
-(async()=>{try{await loadSettings();await loadCategories();await loadProducts();await loadDashboard();await loadHistory();}catch(e){setStatus('❌ '+e.message);}})();
+(async()=>{try{
+  const version=await window.autoSocial.getVersion();
+  if($('appVersion'))$('appVersion').textContent='v'+version;
+  await loadSettings();await loadCategories();await loadProducts();await loadDashboard();await loadHistory();
+}catch(e){setStatus('❌ '+e.message);}})();
