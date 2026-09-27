@@ -1,5 +1,5 @@
 import path from 'path';
-import Database from 'better-sqlite3';
+import { DatabaseSync } from 'node:sqlite';
 import { app } from 'electron';
 import type {
   AiContentResult, CategoryRecord, ContentDraftRecord, DashboardSummary, LearningRecord,
@@ -9,14 +9,16 @@ import type {
 const nowIso = () => new Date().toISOString();
 
 export class AppDb {
-  private db: Database.Database;
+  private db: DatabaseSync;
 
   constructor() {
     const file = path.join(app.getPath('userData'), 'auto-social.db');
-    this.db = new Database(file);
-    this.db.pragma('journal_mode = WAL');
-    this.db.pragma('foreign_keys = ON');
-    this.db.pragma('busy_timeout = 5000');
+    this.db = new DatabaseSync(file, { timeout: 5000 });
+    this.db.exec(`
+      PRAGMA journal_mode = WAL;
+      PRAGMA foreign_keys = ON;
+      PRAGMA busy_timeout = 5000;
+    `);
 
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS categories (
@@ -180,6 +182,17 @@ export class AppDb {
         ON posts(job_key) WHERE job_key IS NOT NULL;
     `);
     this.seedDefaultStyle();
+  }
+
+  private transaction(fn: () => void) {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      fn();
+      this.db.exec('COMMIT');
+    } catch (error) {
+      try { this.db.exec('ROLLBACK'); } catch {}
+      throw error;
+    }
   }
 
   private columns(table: string) {
@@ -376,7 +389,7 @@ export class AppDb {
     const insert = this.db.prepare(`INSERT OR IGNORE INTO product_images(product_id, file_path, note, sort_order, active, used_count, created_at)
       VALUES (?, ?, '', ?, 1, 0, ?)`);
     let order = this.listImages(productId).length;
-    this.db.transaction(() => { for (const file of filePaths) insert.run(productId, file, order++, nowIso()); })();
+    this.transaction(() => { for (const file of filePaths) insert.run(productId, file, order++, nowIso()); });
     return this.listImages(productId);
   }
 
@@ -519,7 +532,7 @@ export class AppDb {
     mode?: RunMode; errorCode?: PostErrorCode | null; aiOriginal?: string; userFinal?: string; jobKey?: string | null;
   }) {
     const now = nowIso();
-    this.db.transaction(() => {
+    this.transaction(() => {
       this.db.prepare(`INSERT OR REPLACE INTO posts(product_name, product_folder, caption, images_json, mode, status, error_code, error_message, ai_original, user_final, job_key, created_at, posted_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .run(productName, productFolder, caption, JSON.stringify(images), extra?.mode || 'auto', status,
@@ -530,7 +543,7 @@ export class AppDb {
           VALUES (?, ?, 1, ?) ON CONFLICT(image_path) DO UPDATE SET used_count = used_count + 1, last_used_at = excluded.last_used_at`);
         for (const image of images) stmt.run(image, productFolder, now);
       }
-    })();
+    });
   }
 
   recentPosts(limit = 50) {
