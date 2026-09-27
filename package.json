@@ -50,5 +50,9 @@
     "directories": {
       "output": "release"
     }
+  },
+  "engines": {
+    "node": ">=22 <23",
+    "npm": ">=10"
   }
 }
