@@ -1,7 +1,9 @@
 import fs from 'fs';
-import { chromium, BrowserContext, Page } from 'playwright-core';
+import { chromium, BrowserContext, Locator, Page } from 'playwright-core';
 import type { FacebookLoginStatus, FacebookPublishResult, RunMode } from './types';
-import { FACEBOOK_SELECTORS, LOGIN_PAGE_SIGNALS, SECURITY_SIGNALS } from './facebook/selectors';
+import {
+  FACEBOOK_SELECTORS, FACEBOOK_URLS, LOGIN_PAGE_SIGNALS, POST_FAILURE_SIGNALS, SECURITY_SIGNALS
+} from './facebook/selectors';
 import { FacebookAutomationError, classifyUnknownError } from './facebook/errors';
 
 function normalizeVisibleText(s: string) {
@@ -15,6 +17,11 @@ async function bodyText(page: Page) {
 async function detectSecurityGate(page: Page): Promise<string | null> {
   const body = await bodyText(page);
   return SECURITY_SIGNALS.find(signal => body.includes(signal)) || null;
+}
+
+async function detectPostFailure(page: Page): Promise<string | null> {
+  const body = await bodyText(page);
+  return POST_FAILURE_SIGNALS.find(signal => body.includes(signal)) || null;
 }
 
 async function isLoginPage(page: Page): Promise<boolean> {
@@ -55,16 +62,18 @@ async function clickComposer(page: Page) {
   }
   throw new FacebookAutomationError(
     'FACEBOOK_UI_CHANGED',
-    'Không tìm thấy ô tạo bài viết. Facebook có thể đã đổi giao diện.'
+    'Không tìm thấy ô tạo bài viết trên trang cá nhân. Facebook có thể đã đổi giao diện.'
   );
 }
 
 async function getComposerDialog(page: Page) {
-  const dialog = page.locator(FACEBOOK_SELECTORS.dialog).last();
-  if (!await dialog.isVisible().catch(() => false)) {
-    throw new FacebookAutomationError('FACEBOOK_UI_CHANGED', 'Không tìm thấy hộp tạo bài viết.');
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const dialog = page.locator(FACEBOOK_SELECTORS.dialog).last();
+    if (await dialog.isVisible().catch(() => false)) return dialog;
+    await page.waitForTimeout(300);
   }
-  return dialog;
+  throw new FacebookAutomationError('FACEBOOK_UI_CHANGED', 'Không tìm thấy hộp tạo bài viết.');
 }
 
 async function fillCaption(page: Page, caption: string) {
@@ -100,7 +109,10 @@ async function addPhotos(page: Page, images: string[]) {
       await inputs.first().setInputFiles(images);
       return;
     } catch (error) {
-      throw new FacebookAutomationError('UPLOAD_ERROR', 'Không thể upload ảnh vào Facebook: ' + String((error as any)?.message || error));
+      throw new FacebookAutomationError(
+        'UPLOAD_ERROR',
+        'Không thể upload ảnh vào Facebook: ' + String((error as any)?.message || error)
+      );
     }
   }
 
@@ -114,23 +126,93 @@ async function addPhotos(page: Page, images: string[]) {
         await chooser.setFiles(images);
         return;
       } catch (error) {
-        throw new FacebookAutomationError('UPLOAD_ERROR', 'Không thể chọn ảnh để upload: ' + String((error as any)?.message || error));
+        throw new FacebookAutomationError(
+          'UPLOAD_ERROR',
+          'Không thể chọn ảnh để upload: ' + String((error as any)?.message || error)
+        );
       }
     }
   }
-  throw new FacebookAutomationError('FACEBOOK_UI_CHANGED', 'Không tìm thấy nút/ô tải ảnh trong hộp tạo bài.');
+
+  throw new FacebookAutomationError(
+    'FACEBOOK_UI_CHANGED',
+    'Không tìm thấy nút/ô tải ảnh trong hộp tạo bài.'
+  );
 }
 
-async function clickPost(page: Page) {
+async function findPostButton(page: Page): Promise<Locator | null> {
   const dialog = await getComposerDialog(page);
   for (const name of FACEBOOK_SELECTORS.postButtonNames) {
     const btn = dialog.getByRole('button', { name }).first();
-    if (await btn.isVisible().catch(() => false) && await btn.isEnabled().catch(() => false)) {
-      await btn.click();
-      return;
-    }
+    if (await btn.isVisible().catch(() => false)) return btn;
   }
-  throw new FacebookAutomationError('FACEBOOK_UI_CHANGED', 'Không tìm thấy nút Đăng hoặc nút chưa sẵn sàng.');
+  return null;
+}
+
+async function waitForPostButtonReady(page: Page, hasImages: boolean): Promise<Locator> {
+  const deadline = Date.now() + (hasImages ? 90_000 : 30_000);
+
+  while (Date.now() < deadline) {
+    await assertSafeSession(page);
+
+    const failure = await detectPostFailure(page);
+    if (failure) {
+      throw new FacebookAutomationError(
+        hasImages ? 'UPLOAD_ERROR' : 'UNKNOWN',
+        'Facebook báo lỗi khi chuẩn bị bài: ' + failure
+      );
+    }
+
+    const btn = await findPostButton(page).catch(() => null);
+    if (btn && await btn.isEnabled().catch(() => false)) return btn;
+
+    await page.waitForTimeout(500);
+  }
+
+  throw new FacebookAutomationError(
+    hasImages ? 'UPLOAD_ERROR' : 'FACEBOOK_UI_CHANGED',
+    hasImages
+      ? 'Ảnh chưa upload xong hoặc nút Đăng chưa sẵn sàng sau thời gian chờ.'
+      : 'Nút Đăng chưa sẵn sàng sau thời gian chờ.'
+  );
+}
+
+async function waitForPostConfirmation(page: Page, composer: Locator) {
+  const deadline = Date.now() + 20_000;
+  let hiddenSince = 0;
+
+  while (Date.now() < deadline) {
+    const security = await detectSecurityGate(page);
+    if (security) {
+      throw new FacebookAutomationError(
+        'POST_UNCERTAIN',
+        'Đã bấm Đăng nhưng Facebook yêu cầu xác minh. Cần kiểm tra trang cá nhân thủ công để tránh đăng trùng.'
+      );
+    }
+
+    const failure = await detectPostFailure(page);
+    if (failure) {
+      throw new FacebookAutomationError(
+        'POST_UNCERTAIN',
+        'Đã bấm Đăng nhưng Facebook báo lỗi hoặc trạng thái không rõ: ' + failure
+      );
+    }
+
+    const visible = await composer.isVisible().catch(() => false);
+    if (!visible) {
+      if (!hiddenSince) hiddenSince = Date.now();
+      if (Date.now() - hiddenSince >= 1500) return;
+    } else {
+      hiddenSince = 0;
+    }
+
+    await page.waitForTimeout(400);
+  }
+
+  throw new FacebookAutomationError(
+    'POST_UNCERTAIN',
+    'Đã bấm Đăng nhưng không xác nhận được bài đã đăng. Không tự thử lại để tránh bài trùng.'
+  );
 }
 
 async function launch(profileDir: string): Promise<BrowserContext> {
@@ -143,14 +225,17 @@ async function launch(profileDir: string): Promise<BrowserContext> {
     });
   } catch (error) {
     const code = classifyUnknownError(error);
-    throw new FacebookAutomationError(code, 'Không thể mở Google Chrome: ' + String((error as any)?.message || error));
+    throw new FacebookAutomationError(
+      code,
+      'Không thể mở Google Chrome: ' + String((error as any)?.message || error)
+    );
   }
 }
 
 export async function openFacebookForLogin(profileDir: string): Promise<void> {
   const context = await launch(profileDir);
   const page = context.pages()[0] || await context.newPage();
-  await page.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await page.goto(FACEBOOK_URLS.home, { waitUntil: 'domcontentloaded', timeout: 60000 });
   // Chủ tài khoản tự đăng nhập và đóng cửa sổ Chrome sau khi xong.
 }
 
@@ -159,8 +244,9 @@ export async function checkFacebookLogin(profileDir: string): Promise<FacebookLo
   try {
     context = await launch(profileDir);
     const page = context.pages()[0] || await context.newPage();
-    await page.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.goto(FACEBOOK_URLS.personalProfile, { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForTimeout(1500);
+
     if (await detectSecurityGate(page)) return 'needs_check';
     if (await isLoginPage(page)) return 'logged_out';
     return 'logged_in';
@@ -178,35 +264,78 @@ export async function publishToFacebook(
   mode: RunMode = 'test'
 ): Promise<FacebookPublishResult> {
   let context: BrowserContext | null = null;
+  let postClicked = false;
+
   try {
     context = await launch(profileDir);
     const page = context.pages()[0] || await context.newPage();
-    await page.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+
+    // Đi thẳng vào profile cá nhân thay vì chỉ dùng composer ở Home.
+    await page.goto(FACEBOOK_URLS.personalProfile, {
+      waitUntil: 'domcontentloaded',
+      timeout: 60000
+    });
     await page.waitForTimeout(2200);
     await assertSafeSession(page);
 
     await clickComposer(page);
-    await page.waitForTimeout(700);
+    const composer = await getComposerDialog(page);
     await fillCaption(page, caption);
 
     if (images.length) {
       await addPhotos(page, images);
-      await page.waitForTimeout(1600);
     }
 
+    // Chờ Facebook xử lý upload và chỉ tiếp tục khi nút Đăng thực sự enabled.
+    const postButton = await waitForPostButtonReady(page, images.length > 0);
     await assertSafeSession(page);
 
     if (mode === 'test') {
-      // Giữ browser mở để người dùng tự kiểm tra và bấm Đăng.
+      // TEST giữ Chrome mở để người dùng xem lại và tự bấm Đăng.
       context = null;
-      return { prepared: true, posted: false };
+      return {
+        prepared: true,
+        posted: false,
+        submitted: false,
+        confirmation: 'prepared'
+      };
     }
 
-    await clickPost(page);
-    await page.waitForTimeout(3500);
-    return { prepared: true, posted: true };
+    await postButton.click();
+    postClicked = true;
+
+    try {
+      await waitForPostConfirmation(page, composer);
+    } catch (error) {
+      // Sau khi đã click Đăng, mọi trạng thái không rõ phải coi là uncertain,
+      // giữ browser mở và tuyệt đối không để scheduler tự retry.
+      context = null;
+      if (error instanceof FacebookAutomationError && error.code === 'POST_UNCERTAIN') {
+        throw error;
+      }
+      throw new FacebookAutomationError(
+        'POST_UNCERTAIN',
+        'Đã bấm Đăng nhưng không xác nhận chắc chắn kết quả. Cần kiểm tra thủ công.'
+      );
+    }
+
+    return {
+      prepared: true,
+      posted: true,
+      submitted: true,
+      confirmation: 'confirmed'
+    };
   } catch (error) {
     if (error instanceof FacebookAutomationError) throw error;
+
+    if (postClicked) {
+      context = null;
+      throw new FacebookAutomationError(
+        'POST_UNCERTAIN',
+        'Đã bấm Đăng nhưng gặp lỗi sau đó. Không tự thử lại để tránh bài trùng.'
+      );
+    }
+
     const code = classifyUnknownError(error);
     throw new FacebookAutomationError(code, String((error as any)?.message || error));
   } finally {
