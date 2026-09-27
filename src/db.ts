@@ -592,10 +592,10 @@ export class AppDb {
   }
 
   setDefaultStyle(id: number) {
-    this.db.transaction(() => {
+    this.transaction(() => {
       this.db.prepare('UPDATE styles SET is_default = 0').run();
       this.db.prepare('UPDATE styles SET is_default = 1, enabled = 1, updated_at = ? WHERE id = ?').run(nowIso(), id);
-    })();
+    });
   }
 
   dashboardSummary(nextPostAt: string | null = null, nextProduct: string | null = null): DashboardSummary {
