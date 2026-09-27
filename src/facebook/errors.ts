@@ -13,6 +13,7 @@ export function classifyUnknownError(error: unknown): PostErrorCode {
   if (/upload|filechooser|setinputfiles|không tìm thấy ảnh/.test(message)) return 'UPLOAD_ERROR';
   if (/đăng nhập|log into facebook|not logged/.test(message)) return 'NOT_LOGGED_IN';
   if (/captcha|checkpoint|security|xác minh|xác nhận danh tính|2fa|two-factor/.test(message)) return 'SECURITY_CHECK';
+  if (/không xác nhận được bài đã đăng|submission uncertain|post uncertain/.test(message)) return 'POST_UNCERTAIN';
   if (/selector|không tìm thấy ô|không tìm thấy nút|facebook có thể đã đổi giao diện/.test(message)) return 'FACEBOOK_UI_CHANGED';
   return 'UNKNOWN';
 }
