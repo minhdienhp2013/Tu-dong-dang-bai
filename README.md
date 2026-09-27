@@ -1,4 +1,4 @@
-# Auto Social Minh Điến — v0.2.2
+# Auto Social Minh Điến — v0.2.3
 
 Ứng dụng Windows desktop local-first để:
 
@@ -243,7 +243,7 @@ Kết quả nằm trong:
 
 ```text
 release/
-  Auto Social Minh Dien Setup 0.2.2.exe
+  Auto Social Minh Dien Setup 0.2.3.exe
 ```
 
 Build dùng `--publish never`, nên không cần `GH_TOKEN` chỉ để đóng gói installer.
@@ -313,3 +313,15 @@ Từ v0.2.2:
 - CI Windows kiểm tra SQLite cả trên Node 24 của máy build và Node tích hợp bên trong Electron trước khi đóng gói.
 
 Nếu trước đó đã cài bản dùng `better-sqlite3`, hãy xóa `node_modules` và `package-lock.json` rồi chạy lại `npm install`.
+
+
+## Đăng nhập Facebook bằng trình duyệt thật
+
+Từ v0.2.3, nút **Mở Facebook để đăng nhập** không dùng Playwright.
+
+- App mở Microsoft Edge thật trước; nếu không có thì dùng Google Chrome.
+- Dùng profile riêng của Auto Social để session/cookie được giữ ổn định.
+- Người dùng tự đăng nhập và tự xử lý CAPTCHA/checkpoint/2FA nếu Facebook yêu cầu.
+- Sau khi đăng nhập/xác minh xong, đóng toàn bộ cửa sổ trình duyệt đó rồi mới bấm **Kiểm tra trạng thái**.
+- TEST/AUTO chỉ chạy sau khi session đã được tạo thủ công.
+- App không tự vượt hoặc né cơ chế xác minh của Facebook.
