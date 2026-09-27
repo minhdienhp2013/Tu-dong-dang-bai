@@ -1,4 +1,4 @@
-# Auto Social Minh Điến — v0.2
+# Auto Social Minh Điến — v0.2.1
 
 Ứng dụng Windows desktop local-first để:
 
@@ -61,6 +61,16 @@ Sau đó **dừng trước nút Đăng** để người dùng tự kiểm tra v�
 ### AUTO
 
 Chỉ bật khi TEST đã ổn định. App thực hiện toàn bộ luồng và tự click **Đăng**.
+
+Ở v0.2.1, luồng AUTO cho **trang cá nhân** được siết chặt:
+- đi thẳng tới `https://www.facebook.com/me/`;
+- chờ composer thật sự mở;
+- điền caption;
+- upload toàn bộ ảnh;
+- chờ nút **Đăng** enabled trước khi click;
+- sau click, chờ composer đóng ổn định và kiểm tra không có thông báo lỗi;
+- chỉ khi xác nhận được mới ghi `posted`;
+- nếu đã click nhưng không xác nhận chắc chắn, ghi `uncertain / POST_UNCERTAIN`, giữ Chrome mở để kiểm tra và **không retry tự động**.
 
 ## Chống đăng trùng
 
@@ -207,6 +217,7 @@ Các lỗi chính:
 - `NOT_LOGGED_IN`
 - `SECURITY_CHECK`
 - `UPLOAD_ERROR`
+- `POST_UNCERTAIN`
 - `UNKNOWN`
 
 ## Chạy development
@@ -232,7 +243,7 @@ Kết quả nằm trong:
 
 ```text
 release/
-  Auto Social Minh Dien Setup 0.2.0.exe
+  Auto Social Minh Dien Setup 0.2.1.exe
 ```
 
 Build dùng `--publish never`, nên không cần `GH_TOKEN` chỉ để đóng gói installer.
@@ -275,3 +286,16 @@ GitHub Actions chạy trên Windows:
 - upload installer thành artifact để tải test.
 
 **Không merge vào `main` nếu TypeScript/build Windows còn đỏ.**
+
+
+## Phạm vi ưu tiên hiện tại
+
+Bản này **chỉ hoàn thiện đăng Facebook trang cá nhân trước**.
+
+Chưa triển khai trong nhánh này:
+- đăng hội nhóm;
+- đăng Fanpage;
+- lịch calendar cả tháng;
+- social network khác.
+
+Các phần đó được giữ lại cho bước sau để không làm tăng rủi ro khi luồng trang cá nhân chưa được nghiệm thu thực tế.
