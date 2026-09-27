@@ -1,17 +1,17 @@
 import fs from 'fs';
 import path from 'path';
+import { randomUUID } from 'crypto';
 import {
   app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, Tray
 } from 'electron';
 import { ConfigStore } from './config';
 import { AppDb } from './db';
-import { scanProducts, chooseEligibleProduct, chooseImages, inventoryStats } from './scanner';
-import { generateCaption, generateProductContent } from './ai';
+import { generateProductContent } from './ai';
 import { checkFacebookLogin, openFacebookForLogin, publishToFacebook } from './facebook';
 import { FacebookAutomationError, classifyUnknownError, isAutoRetryable } from './facebook/errors';
 import { Scheduler } from './scheduler';
 import { AppLogger } from './logger';
-import type { DraftPost, PostErrorCode, ProductFolder, RunMode, SocialPostRecord } from './types';
+import type { ContentDraftRecord, DraftPost, PostErrorCode, ProductImageRecord, ProductRecord, RunMode, SocialPostRecord } from './types';
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
@@ -118,51 +118,105 @@ function refreshTrayMenu() {
   ]));
 }
 
-function normalizeProductName(name: string) {
-  return name.trim().toLocaleLowerCase('vi');
+function mediaRoot() {
+  return path.join(app.getPath('userData'), 'media', 'products');
 }
 
-function getCatalogProducts(): ProductFolder[] {
+function productMediaDir(productId: number) {
+  return path.join(mediaRoot(), String(productId));
+}
+
+function isManagedMediaPath(filePath: string) {
+  const rel = path.relative(mediaRoot(), filePath);
+  return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel);
+}
+
+function copyImageIntoLibrary(productId: number, sourcePath: string) {
+  if (!fs.existsSync(sourcePath)) throw new Error('Không tìm thấy ảnh đã chọn: ' + sourcePath);
+  const ext = path.extname(sourcePath).toLowerCase();
+  if (!['.jpg', '.jpeg', '.png', '.webp'].includes(ext)) {
+    throw new Error('Định dạng ảnh không hỗ trợ: ' + ext);
+  }
+  const dir = productMediaDir(productId);
+  fs.mkdirSync(dir, { recursive: true });
+  const destination = path.join(dir, randomUUID() + ext);
+  fs.copyFileSync(sourcePath, destination);
+  return destination;
+}
+
+function migrateLegacyProductImages() {
+  let migrated = 0;
+  for (const product of db.listProducts()) {
+    for (const image of db.listImages(product.id)) {
+      if (!image.file_path || isManagedMediaPath(image.file_path) || !fs.existsSync(image.file_path)) continue;
+      try {
+        const destination = copyImageIntoLibrary(product.id, image.file_path);
+        db.updateImagePath(image.id, destination);
+        migrated++;
+      } catch {
+        // Giữ bản ghi cũ nếu file nguồn không thể copy; UI sẽ cho người dùng thêm lại ảnh.
+      }
+    }
+  }
+  return migrated;
+}
+
+type PostingCandidate = {
+  product: ProductRecord;
+  content: ContentDraftRecord;
+  images: ProductImageRecord[];
+  lastPostedAt: string | null;
+};
+
+function usableImages(rows: ProductImageRecord[], reuseAfterDays: number, count: number) {
+  const active = rows.filter(image => !!image.active && fs.existsSync(image.file_path));
+  const unused = active.filter(image => Number(image.used_count || 0) === 0);
+  if (unused.length) return unused.slice(0, Math.max(1, count));
+
+  const cutoff = Date.now() - reuseAfterDays * 86400000;
+  return active
+    .filter(image => !image.last_used_at || new Date(image.last_used_at).getTime() <= cutoff)
+    .slice(0, Math.max(1, count));
+}
+
+function getPostingCandidates(): PostingCandidate[] {
   return db.listProducts()
     .filter(product => !!product.active)
     .map(product => {
-      const rows = db.listImages(product.id)
-        .filter(image => !!image.active && fs.existsSync(image.file_path));
-      const images = rows.map(image => image.file_path);
-      const notes = rows
-        .map((image, index) => image.note?.trim() ? `Ảnh ${index + 1}: ${image.note.trim()}` : '')
-        .filter(Boolean)
-        .join('\n');
+      const contents = db.listContents(product.id).filter(content => content.status !== 'used');
+      const content = contents.find(item => item.status === 'approved') || contents.find(item => item.status === 'draft');
+      if (!content) return null;
 
-      const infoText = [
-        product.description?.trim(),
-        product.info_text?.trim(),
-        product.default_hashtags?.trim() ? `Hashtag gợi ý: ${product.default_hashtags.trim()}` : '',
-        notes ? `Ghi chú ảnh:\n${notes}` : ''
-      ].filter(Boolean).join('\n\n');
+      const images = db.listImages(product.id).filter(image => !!image.active && fs.existsSync(image.file_path));
+      if (!images.length) return null;
 
-      const productKey = `catalog:${product.id}`;
       return {
-        name: product.name,
-        folderPath: productKey,
-        infoText,
+        product,
+        content,
         images,
-        unusedImages: images.filter(image => !db.imageUsed(image)),
-        lastPostedAt: db.getLastPostedAt(productKey)
-      } satisfies ProductFolder;
+        lastPostedAt: db.getProductLastPostedAt(product.id)
+      } satisfies PostingCandidate;
     })
-    .filter(product => product.images.length > 0);
+    .filter((item): item is PostingCandidate => !!item);
 }
 
-function getProducts() {
-  const catalog = getCatalogProducts();
-  const catalogNames = new Set(catalog.map(product => normalizeProductName(product.name)));
-  const folderProducts = scanProducts(configStore.load().rootFolder, db)
-    .filter(product => !catalogNames.has(normalizeProductName(product.name)));
+function choosePostingCandidate(candidates: PostingCandidate[], daysBeforeRepeat: number, imageReuseAfterDays: number) {
+  const cutoff = Date.now() - daysBeforeRepeat * 86400000;
+  const eligible = candidates.filter(item => {
+    if (item.lastPostedAt && new Date(item.lastPostedAt).getTime() >= cutoff) return false;
+    return usableImages(item.images, imageReuseAfterDays, 1).length > 0;
+  });
 
-  // Sản phẩm quản lý trực tiếp trong app là nguồn chính.
-  // Kho thư mục local chỉ bổ sung các mặt hàng chưa có trong Content Manager.
-  return [...catalog, ...folderProducts];
+  eligible.sort((a, b) => {
+    const aUnused = a.images.some(image => Number(image.used_count || 0) === 0) ? 1 : 0;
+    const bUnused = b.images.some(image => Number(image.used_count || 0) === 0) ? 1 : 0;
+    if (aUnused !== bUnused) return bUnused - aUnused;
+    const aTime = a.lastPostedAt ? new Date(a.lastPostedAt).getTime() : 0;
+    const bTime = b.lastPostedAt ? new Date(b.lastPostedAt).getTime() : 0;
+    return aTime - bTime;
+  });
+
+  return eligible[0] || null;
 }
 
 function selectedStylePrompt() {
@@ -172,32 +226,59 @@ function selectedStylePrompt() {
   return style?.prompt || cfg.stylePrompt;
 }
 
-async function makeDraft(folderPath?: string): Promise<DraftPost> {
+async function makeDraft(productId?: number): Promise<DraftPost> {
   const cfg = configStore.load();
-  const products = getProducts();
-  let product: ProductFolder | null = null;
-  if (folderPath) product = products.find(p => p.folderPath === folderPath) || null;
-  if (!product) product = chooseEligibleProduct(products, cfg.daysBeforeRepeatProduct);
-  if (!product) {
-    notify('Auto Social Minh Điến', '📂 Không còn sản phẩm phù hợp để đăng.');
-    throw new Error('Không có mặt hàng đủ điều kiện để đăng. Hãy kiểm tra sản phẩm đang bật, có ít nhất 1 ảnh đang dùng và ảnh vẫn còn tồn tại trên máy.');
+  const candidates = getPostingCandidates();
+  const preferred = productId ? candidates.find(item => item.product.id === productId) || null : null;
+  const selected = preferred || choosePostingCandidate(candidates, cfg.daysBeforeRepeatProduct, cfg.imageReuseAfterDays);
+
+  if (!selected) {
+    notify('Auto Social Minh Điến', '📦 Chưa có sản phẩm đủ điều kiện để đăng.');
+    throw new Error(
+      'Chưa có sản phẩm đủ điều kiện. Trong app cần: sản phẩm đang hoạt động, ít nhất 1 ảnh đang dùng, ít nhất 1 nội dung Nháp/Đã duyệt, và không nằm trong thời gian chống lặp.'
+    );
   }
 
-  const images = chooseImages(product, cfg.imagesPerPost, db, cfg.imageReuseAfterDays);
-  if (!images.length) throw new Error('Sản phẩm chưa có ảnh đủ điều kiện dùng lại.');
+  const selectedImages = usableImages(selected.images, cfg.imageReuseAfterDays, cfg.imagesPerPost);
+  if (!selectedImages.length) {
+    throw new Error('Ảnh của sản phẩm chưa đủ điều kiện dùng lại theo cài đặt hiện tại.');
+  }
 
-  logger.write('AI_START', { product: product.name });
-  const learning = db.recentLearning(10, product.name);
-  const caption = await generateCaption(cfg, product, learning, selectedStylePrompt());
-  logger.write('AI_SUCCESS', { product: product.name });
+  const caption = [
+    selected.content.title?.trim(),
+    selected.content.caption?.trim(),
+    selected.content.hashtags?.trim()
+  ].filter(Boolean).join('\n\n');
+
+  if (!caption.trim()) throw new Error('Nội dung của sản phẩm đang trống.');
+
+  logger.write('CONTENT_SELECTED', {
+    product: selected.product.name,
+    productId: selected.product.id,
+    contentId: selected.content.id,
+    images: selectedImages.length
+  });
+
   return {
-    productName: product.name,
-    productFolder: product.folderPath,
+    productId: selected.product.id,
+    contentId: selected.content.id,
+    imageIds: selectedImages.map(image => image.id),
+    productName: selected.product.name,
+    productFolder: `catalog:${selected.product.id}`,
     caption,
-    aiOriginal: caption,
-    images,
+    aiOriginal: selected.content.ai_original || selected.content.caption,
+    images: selectedImages.map(image => image.file_path),
     mode: cfg.runMode
   };
+}
+
+function resolvedDraftImageIds(draft: DraftPost) {
+  if (draft.productId) {
+    return db.listImages(draft.productId)
+      .filter(image => draft.images.includes(image.file_path))
+      .map(image => image.id);
+  }
+  return draft.imageIds || [];
 }
 
 function errorInfo(error: unknown): { code: PostErrorCode; message: string } {
@@ -233,6 +314,9 @@ async function executeScheduledJob(jobId: number, draft: DraftPost) {
       db.markPost(draft.productName, draft.productFolder, draft.caption, draft.images, 'posted', undefined, {
         mode, aiOriginal: draft.aiOriginal, userFinal: draft.caption, jobKey: draft.jobKey || null
       });
+      const usedImageIds = resolvedDraftImageIds(draft);
+      if (usedImageIds.length) db.markImagesUsed(usedImageIds);
+      if (draft.contentId) db.markContentUsed(draft.contentId);
       db.addLearning(draft.productName, draft.aiOriginal || draft.caption, draft.caption);
       logger.write('POST_SUCCESS', { product: draft.productName });
       notify('Auto Social Minh Điến', `✅ Đã đăng ${draft.productName} lên Facebook.`);
@@ -337,7 +421,14 @@ async function processNetworkRetries() {
   const rows = db.getRetryableJobs(new Date().toISOString());
   for (const row of rows) {
     const images = JSON.parse(row.images_json || '[]') as string[];
+    const productMatch = /^catalog:(\d+)$/.exec(String(row.product_folder || ''));
+    const productId = productMatch ? Number(productMatch[1]) : undefined;
+    const imageIds = productId
+      ? db.listImages(productId).filter(image => images.includes(image.file_path)).map(image => image.id)
+      : [];
     const draft: DraftPost = {
+      productId,
+      imageIds,
       productName: row.product_name || 'Sản phẩm',
       productFolder: row.product_folder || '',
       caption: row.caption || '',
@@ -442,6 +533,9 @@ async function postDraft(draft: DraftPost) {
       db.markPost(draft.productName, draft.productFolder, draft.caption, draft.images, 'posted', undefined, {
         mode, aiOriginal: draft.aiOriginal, userFinal: draft.caption
       });
+      const usedImageIds = resolvedDraftImageIds(draft);
+      if (usedImageIds.length) db.markImagesUsed(usedImageIds);
+      if (draft.contentId) db.markContentUsed(draft.contentId);
       db.addLearning(draft.productName, draft.aiOriginal || draft.caption, draft.caption);
       notify('Auto Social Minh Điến', `✅ Đã đăng ${draft.productName} lên Facebook.`);
     } else {
@@ -495,6 +589,7 @@ function nextScheduleInfo() {
 }
 
 function registerIpc() {
+  ipcMain.handle('app:version', () => app.getVersion());
   ipcMain.handle('config:get', () => {
     const cfg = configStore.load();
     return { ...cfg, deepseekApiKey: '', hasDeepseekApiKey: !!cfg.deepseekApiKey };
@@ -509,13 +604,7 @@ function registerIpc() {
     refreshTrayMenu();
     return { ...saved, deepseekApiKey: '', hasDeepseekApiKey: !!saved.deepseekApiKey };
   });
-  ipcMain.handle('folder:choose', async () => {
-    const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory'] });
-    if (r.canceled || !r.filePaths[0]) return null;
-    return configStore.save({ rootFolder: r.filePaths[0] });
-  });
-  ipcMain.handle('products:scan', () => getProducts());
-  ipcMain.handle('draft:generate', async (_e, folderPath?: string) => makeDraft(folderPath));
+  ipcMain.handle('draft:generate', async (_e, productId?: number) => makeDraft(productId ? Number(productId) : undefined));
   ipcMain.handle('facebook:post', async (_e, draft: DraftPost) => postDraft(draft));
   ipcMain.handle('facebook:login', async () => {
     await openFacebookForLogin(configStore.load().browserProfileDir);
@@ -556,7 +645,12 @@ function registerIpc() {
     defaultHashtags: String(data?.defaultHashtags || ''),
     active: data?.active !== false
   }));
-  ipcMain.handle('catalog:products:delete', (_e, id: number) => { db.deleteProduct(Number(id)); return { ok: true }; });
+  ipcMain.handle('catalog:products:delete', (_e, id: number) => {
+    const productId = Number(id);
+    db.deleteProduct(productId);
+    fs.rmSync(productMediaDir(productId), { recursive: true, force: true });
+    return { ok: true };
+  });
 
   ipcMain.handle('catalog:images:list', (_e, productId: number) => db.listImages(Number(productId)));
   ipcMain.handle('catalog:images:add', async (_e, productId: number) => {
@@ -564,12 +658,22 @@ function registerIpc() {
       title: 'Chọn ảnh sản phẩm', properties: ['openFile', 'multiSelections'],
       filters: [{ name: 'Hình ảnh', extensions: ['jpg', 'jpeg', 'png', 'webp'] }]
     });
-    return r.canceled ? db.listImages(Number(productId)) : db.addImages(Number(productId), r.filePaths);
+    if (r.canceled) return db.listImages(Number(productId));
+    const managedPaths = r.filePaths.map(filePath => copyImageIntoLibrary(Number(productId), filePath));
+    return db.addImages(Number(productId), managedPaths);
   });
   ipcMain.handle('catalog:images:update', (_e, id: number, data) => db.updateImage(Number(id), {
     note: data?.note, sortOrder: data?.sortOrder === undefined ? undefined : Number(data.sortOrder), active: data?.active
   }));
-  ipcMain.handle('catalog:images:delete', (_e, id: number) => { db.deleteImage(Number(id)); return { ok: true }; });
+  ipcMain.handle('catalog:images:delete', (_e, id: number) => {
+    const imageId = Number(id);
+    const image = db.getImage(imageId);
+    db.deleteImage(imageId);
+    if (image?.file_path && isManagedMediaPath(image.file_path)) {
+      fs.rmSync(image.file_path, { force: true });
+    }
+    return { ok: true };
+  });
 
   ipcMain.handle('content:list', (_e, productId?: number) => db.listContents(productId ? Number(productId) : undefined));
   ipcMain.handle('content:generate', async (_e, productId: number) => {
@@ -577,7 +681,7 @@ function registerIpc() {
     if (!product) throw new Error('Không tìm thấy sản phẩm.');
     const images = db.listImages(product.id).filter(i => i.active);
     const result = await generateProductContent(
-      configStore.load(), product, images, configStore.load().rootFolder || undefined,
+      configStore.load(), product, images,
       db.recentLearning(10, product.name), selectedStylePrompt()
     );
     return db.createContent(product.id, result, 'ai', result.caption, configStore.load().defaultStyleId);
@@ -617,12 +721,13 @@ function registerIpc() {
   });
 
   ipcMain.handle('dashboard:get', async () => {
-    const products = getProducts();
-    const inv = inventoryStats(products);
+    const cfg = configStore.load();
+    const candidates = getPostingCandidates();
+    const selected = choosePostingCandidate(candidates, cfg.daysBeforeRepeatProduct, cfg.imageReuseAfterDays);
+    const inv = db.catalogInventoryStats();
     const next = nextScheduleInfo();
-    const nextProduct = chooseEligibleProduct(products, configStore.load().daysBeforeRepeatProduct)?.name || null;
-    const summary = db.dashboardSummary(next?.at.toISOString() || null, nextProduct);
-    return { ...summary, ...inv, mode: configStore.load().runMode, paused: configStore.load().schedulerPaused };
+    const summary = db.dashboardSummary(next?.at.toISOString() || null, selected?.product.name || null);
+    return { ...summary, ...inv, mode: cfg.runMode, paused: cfg.schedulerPaused };
   });
   ipcMain.handle('app:log-path', () => logger.getPath());
 }
@@ -636,8 +741,9 @@ if (gotSingleInstanceLock) {
     logger = new AppLogger();
     scheduler = new Scheduler();
 
+    const migratedImages = migrateLegacyProductImages();
     db.recoverInterruptedJobs();
-    logger.write('APP_START', { version: app.getVersion() });
+    logger.write('APP_START', { version: app.getVersion(), migratedImages });
     applyWindowsStartup();
     createTray();
     registerIpc();

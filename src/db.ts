@@ -385,6 +385,15 @@ export class AppDb {
     return this.db.prepare('SELECT * FROM product_images WHERE product_id = ? ORDER BY sort_order, id').all(productId) as ProductImageRecord[];
   }
 
+  getImage(id: number): ProductImageRecord | null {
+    return (this.db.prepare('SELECT * FROM product_images WHERE id = ?').get(id) as ProductImageRecord) || null;
+  }
+
+  updateImagePath(id: number, filePath: string): ProductImageRecord {
+    this.db.prepare('UPDATE product_images SET file_path = ? WHERE id = ?').run(filePath, id);
+    return this.getImage(id)!;
+  }
+
   addImages(productId: number, filePaths: string[]): ProductImageRecord[] {
     const insert = this.db.prepare(`INSERT OR IGNORE INTO product_images(product_id, file_path, note, sort_order, active, used_count, created_at)
       VALUES (?, ?, '', ?, 1, 0, ?)`);
@@ -596,6 +605,28 @@ export class AppDb {
       this.db.prepare('UPDATE styles SET is_default = 0').run();
       this.db.prepare('UPDATE styles SET is_default = 1, enabled = 1, updated_at = ? WHERE id = ?').run(nowIso(), id);
     });
+  }
+
+  getProductLastPostedAt(productId: number): string | null {
+    const legacy = this.db.prepare(
+      "SELECT posted_at FROM posts WHERE product_folder = ? AND status = 'posted' ORDER BY posted_at DESC LIMIT 1"
+    ).get(`catalog:${productId}`) as any;
+    const managed = this.db.prepare(
+      "SELECT posted_at FROM social_posts WHERE product_id = ? AND status = 'posted' ORDER BY posted_at DESC LIMIT 1"
+    ).get(productId) as any;
+    const values = [legacy?.posted_at, managed?.posted_at].filter(Boolean).sort().reverse();
+    return values[0] || null;
+  }
+
+  catalogInventoryStats() {
+    const productCount = Number((this.db.prepare("SELECT COUNT(*) c FROM products WHERE active = 1").get() as any)?.c || 0);
+    const imageCount = Number((this.db.prepare(`
+      SELECT COUNT(*) c
+      FROM product_images i
+      JOIN products p ON p.id = i.product_id
+      WHERE p.active = 1 AND i.active = 1
+    `).get() as any)?.c || 0);
+    return { productCount, imageCount };
   }
 
   dashboardSummary(nextPostAt: string | null = null, nextProduct: string | null = null): DashboardSummary {

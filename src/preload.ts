@@ -1,11 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('autoSocial', {
+  getVersion: () => ipcRenderer.invoke('app:version'),
   getConfig: () => ipcRenderer.invoke('config:get'),
   saveConfig: (data: any) => ipcRenderer.invoke('config:save', data),
-  chooseFolder: () => ipcRenderer.invoke('folder:choose'),
-  scan: () => ipcRenderer.invoke('products:scan'),
-
   listCategories: () => ipcRenderer.invoke('categories:list'),
   createCategory: (data: any) => ipcRenderer.invoke('categories:create', data),
   updateCategory: (id: number, data: any) => ipcRenderer.invoke('categories:update', id, data),
@@ -41,7 +39,7 @@ contextBridge.exposeInMainWorld('autoSocial', {
 
   openLogin: () => ipcRenderer.invoke('facebook:login'),
   checkFacebookStatus: () => ipcRenderer.invoke('facebook:status'),
-  generateDraft: (folderPath?: string) => ipcRenderer.invoke('draft:generate', folderPath),
+  generateDraft: (productId?: number) => ipcRenderer.invoke('draft:generate', productId),
   postDraft: (draft: any) => ipcRenderer.invoke('facebook:post', draft),
   recentPosts: () => ipcRenderer.invoke('posts:recent'),
 

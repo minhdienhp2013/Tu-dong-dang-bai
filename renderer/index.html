@@ -8,7 +8,7 @@
 </head>
 <body>
   <header class="topbar">
-    <div><h1>🤖 AUTO SOCIAL MINH ĐIẾN</h1><p>Facebook cá nhân · Ảnh local · AI · Scheduler · SQLite</p></div>
+    <div><h1>🤖 AUTO SOCIAL MINH ĐIẾN</h1><p>Facebook cá nhân · Kho nội bộ · AI · Scheduler · SQLite · <span id="appVersion">v...</span></p></div>
     <div id="status" class="status">Sẵn sàng</div>
   </header>
 
@@ -29,7 +29,7 @@
         <section class="card metric-card"><span>Chế độ</span><strong id="modeSummary">TEST</strong><small>TEST không tự bấm Đăng</small></section>
         <section class="card metric-card"><span>Tự động</span><strong id="autoSummary">TẮT</strong><small id="pauseSummary">Lịch đang chạy</small></section>
         <section class="card metric-card"><span>Bài tiếp theo</span><strong id="nextPostSummary">—</strong><small id="nextProductSummary">—</small></section>
-        <section class="card metric-card"><span>Kho ảnh local</span><strong id="inventorySummary">0 mặt hàng</strong><small id="imageSummary">0 ảnh</small></section>
+        <section class="card metric-card"><span>Kho nội bộ</span><strong id="inventorySummary">0 mặt hàng</strong><small id="imageSummary">0 ảnh</small></section>
         <section class="card metric-card"><span>Hôm nay</span><strong id="todaySummary">0 đã đăng</strong><small id="todayFailSummary">0 lỗi</small></section>
       </div>
 
@@ -51,7 +51,7 @@
     <section id="tab-catalog" class="tab-panel">
       <div class="grid-main">
         <aside class="card sidebar"><div class="section-title-row"><h2>Danh mục</h2><button id="addCategoryBtn" class="icon-btn">＋</button></div><div id="categoryTree" class="category-tree"></div></aside>
-        <section class="card"><div class="section-title-row"><div><h2>Sản phẩm</h2><p class="muted">Danh mục, mục con, ảnh và ghi chú từng ảnh</p></div><button id="addProductBtn">＋ Thêm sản phẩm</button></div><div id="productList" class="product-list"></div></section>
+        <section class="card"><div class="section-title-row"><div><h2>Sản phẩm</h2><p class="muted">Danh mục, sản phẩm, ảnh và nội dung đều quản lý trong app</p></div><button id="addProductBtn">＋ Thêm sản phẩm</button></div><div id="productList" class="product-list"></div></section>
       </div>
       <section id="productEditor" class="card hidden">
         <div class="section-title-row"><h2 id="productEditorTitle">Chi tiết sản phẩm</h2><button id="closeProductEditor" class="secondary">Đóng</button></div>
@@ -62,7 +62,7 @@
         <label class="switch-row"><input id="productActive" type="checkbox" /> Đang hoạt động</label>
         <div class="row"><button id="saveProductBtn">💾 Lưu sản phẩm</button><button id="deleteProductBtn" class="danger">🗑 Xóa</button></div>
         <hr />
-        <div class="section-title-row"><div><h3>Hình ảnh</h3><p class="muted">Ghi chú riêng từng ảnh, bật/tắt và thay đổi thứ tự.</p></div><button id="addImagesBtn">🖼 Thêm ảnh</button></div>
+        <div class="section-title-row"><div><h3>Hình ảnh</h3><p class="muted">Ảnh được sao chép vào kho nội bộ của Auto Social; có thể ghi chú, bật/tắt và đổi thứ tự.</p></div><button id="addImagesBtn">🖼 Thêm ảnh</button></div>
         <div id="imageGrid" class="image-grid"></div>
       </section>
     </section>
@@ -127,8 +127,8 @@
         </section>
 
         <section class="card full">
-          <h2>Kho ảnh local</h2>
-          <div class="row"><input id="rootFolder" readonly placeholder="Chưa chọn thư mục" /><button id="chooseFolder">📁 Chọn</button></div>
+          <h2>Quy tắc chọn bài</h2>
+          <p class="muted">Sản phẩm, ảnh và nội dung đều được quản lý trực tiếp trong ứng dụng.</p>
           <div class="form-grid">
             <div><label>Không lặp cùng mặt hàng trong</label><input id="repeatDays" type="number" min="0" max="365" /></div>
             <div><label>Cho phép dùng lại ảnh sau (ngày)</label><input id="imageReuseAfterDays" type="number" min="0" max="3650" /></div>

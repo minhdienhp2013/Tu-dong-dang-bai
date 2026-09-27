@@ -23,7 +23,6 @@ type StoredConfig = Partial<AppConfig> & {
 function defaultConfig(): AppConfig {
   const userData = app.getPath('userData');
   return {
-    rootFolder: '',
     aiProvider: 'deepseek',
     deepseekApiKey: process.env.DEEPSEEK_API_KEY || '',
     deepseekModel: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
@@ -47,9 +46,11 @@ function defaultConfig(): AppConfig {
 }
 
 function sanitizeConfig(raw: Partial<AppConfig>, base: AppConfig): AppConfig {
+  // Bỏ cấu hình rootFolder cũ: từ v0.3 dữ liệu sản phẩm/ảnh chỉ do app quản lý.
+  const { rootFolder: _legacyRootFolder, ...cleanRaw } = raw as any;
   return {
     ...base,
-    ...raw,
+    ...cleanRaw,
     postingTimes: Array.isArray(raw.postingTimes) ? raw.postingTimes.filter(Boolean) : base.postingTimes,
     runMode: raw.runMode === 'auto' ? 'auto' : 'test',
     imagesPerPost: Math.max(1, Math.min(10, Number(raw.imagesPerPost ?? base.imagesPerPost))),

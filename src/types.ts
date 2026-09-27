@@ -11,7 +11,6 @@ export type PostErrorCode =
   | 'UNKNOWN';
 
 export type AppConfig = {
-  rootFolder: string;
   aiProvider: 'deepseek' | 'ollama';
   deepseekApiKey: string;
   deepseekModel: string;
@@ -121,6 +120,9 @@ export type ProductFolder = {
 };
 
 export type DraftPost = {
+  productId?: number;
+  contentId?: number | null;
+  imageIds?: number[];
   productName: string;
   productFolder: string;
   caption: string;
