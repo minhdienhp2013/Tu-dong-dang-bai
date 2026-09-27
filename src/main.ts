@@ -305,6 +305,8 @@ async function executeScheduledJob(jobId: number, draft: DraftPost) {
       db.markPost(draft.productName, draft.productFolder, draft.caption, draft.images, 'posted', undefined, {
         mode, aiOriginal: draft.aiOriginal, userFinal: draft.caption, jobKey: draft.jobKey || null
       });
+      if (draft.imageIds?.length) db.markImagesUsed(draft.imageIds);
+      if (draft.contentId) db.markContentUsed(draft.contentId);
       db.addLearning(draft.productName, draft.aiOriginal || draft.caption, draft.caption);
       logger.write('POST_SUCCESS', { product: draft.productName });
       notify('Auto Social Minh Điến', `✅ Đã đăng ${draft.productName} lên Facebook.`);
@@ -409,7 +411,14 @@ async function processNetworkRetries() {
   const rows = db.getRetryableJobs(new Date().toISOString());
   for (const row of rows) {
     const images = JSON.parse(row.images_json || '[]') as string[];
+    const productMatch = /^catalog:(\d+)$/.exec(String(row.product_folder || ''));
+    const productId = productMatch ? Number(productMatch[1]) : undefined;
+    const imageIds = productId
+      ? db.listImages(productId).filter(image => images.includes(image.file_path)).map(image => image.id)
+      : [];
     const draft: DraftPost = {
+      productId,
+      imageIds,
       productName: row.product_name || 'Sản phẩm',
       productFolder: row.product_folder || '',
       caption: row.caption || '',
@@ -514,6 +523,8 @@ async function postDraft(draft: DraftPost) {
       db.markPost(draft.productName, draft.productFolder, draft.caption, draft.images, 'posted', undefined, {
         mode, aiOriginal: draft.aiOriginal, userFinal: draft.caption
       });
+      if (draft.imageIds?.length) db.markImagesUsed(draft.imageIds);
+      if (draft.contentId) db.markContentUsed(draft.contentId);
       db.addLearning(draft.productName, draft.aiOriginal || draft.caption, draft.caption);
       notify('Auto Social Minh Điến', `✅ Đã đăng ${draft.productName} lên Facebook.`);
     } else {
@@ -581,13 +592,7 @@ function registerIpc() {
     refreshTrayMenu();
     return { ...saved, deepseekApiKey: '', hasDeepseekApiKey: !!saved.deepseekApiKey };
   });
-  ipcMain.handle('folder:choose', async () => {
-    const r = await dialog.showOpenDialog(win!, { properties: ['openDirectory'] });
-    if (r.canceled || !r.filePaths[0]) return null;
-    return configStore.save({ rootFolder: r.filePaths[0] });
-  });
-  ipcMain.handle('products:scan', () => getProducts());
-  ipcMain.handle('draft:generate', async (_e, folderPath?: string) => makeDraft(folderPath));
+  ipcMain.handle('draft:generate', async (_e, productId?: number) => makeDraft(productId ? Number(productId) : undefined));
   ipcMain.handle('facebook:post', async (_e, draft: DraftPost) => postDraft(draft));
   ipcMain.handle('facebook:login', async () => {
     await openFacebookForLogin(configStore.load().browserProfileDir);
@@ -628,7 +633,12 @@ function registerIpc() {
     defaultHashtags: String(data?.defaultHashtags || ''),
     active: data?.active !== false
   }));
-  ipcMain.handle('catalog:products:delete', (_e, id: number) => { db.deleteProduct(Number(id)); return { ok: true }; });
+  ipcMain.handle('catalog:products:delete', (_e, id: number) => {
+    const productId = Number(id);
+    db.deleteProduct(productId);
+    fs.rmSync(productMediaDir(productId), { recursive: true, force: true });
+    return { ok: true };
+  });
 
   ipcMain.handle('catalog:images:list', (_e, productId: number) => db.listImages(Number(productId)));
   ipcMain.handle('catalog:images:add', async (_e, productId: number) => {
@@ -636,12 +646,22 @@ function registerIpc() {
       title: 'Chọn ảnh sản phẩm', properties: ['openFile', 'multiSelections'],
       filters: [{ name: 'Hình ảnh', extensions: ['jpg', 'jpeg', 'png', 'webp'] }]
     });
-    return r.canceled ? db.listImages(Number(productId)) : db.addImages(Number(productId), r.filePaths);
+    if (r.canceled) return db.listImages(Number(productId));
+    const managedPaths = r.filePaths.map(filePath => copyImageIntoLibrary(Number(productId), filePath));
+    return db.addImages(Number(productId), managedPaths);
   });
   ipcMain.handle('catalog:images:update', (_e, id: number, data) => db.updateImage(Number(id), {
     note: data?.note, sortOrder: data?.sortOrder === undefined ? undefined : Number(data.sortOrder), active: data?.active
   }));
-  ipcMain.handle('catalog:images:delete', (_e, id: number) => { db.deleteImage(Number(id)); return { ok: true }; });
+  ipcMain.handle('catalog:images:delete', (_e, id: number) => {
+    const imageId = Number(id);
+    const image = db.getImage(imageId);
+    db.deleteImage(imageId);
+    if (image?.file_path && isManagedMediaPath(image.file_path)) {
+      fs.rmSync(image.file_path, { force: true });
+    }
+    return { ok: true };
+  });
 
   ipcMain.handle('content:list', (_e, productId?: number) => db.listContents(productId ? Number(productId) : undefined));
   ipcMain.handle('content:generate', async (_e, productId: number) => {
@@ -649,7 +669,7 @@ function registerIpc() {
     if (!product) throw new Error('Không tìm thấy sản phẩm.');
     const images = db.listImages(product.id).filter(i => i.active);
     const result = await generateProductContent(
-      configStore.load(), product, images, configStore.load().rootFolder || undefined,
+      configStore.load(), product, images,
       db.recentLearning(10, product.name), selectedStylePrompt()
     );
     return db.createContent(product.id, result, 'ai', result.caption, configStore.load().defaultStyleId);
@@ -689,12 +709,13 @@ function registerIpc() {
   });
 
   ipcMain.handle('dashboard:get', async () => {
-    const products = getProducts();
-    const inv = inventoryStats(products);
+    const cfg = configStore.load();
+    const candidates = getPostingCandidates();
+    const selected = choosePostingCandidate(candidates, cfg.daysBeforeRepeatProduct, cfg.imageReuseAfterDays);
+    const inv = db.catalogInventoryStats();
     const next = nextScheduleInfo();
-    const nextProduct = chooseEligibleProduct(products, configStore.load().daysBeforeRepeatProduct)?.name || null;
-    const summary = db.dashboardSummary(next?.at.toISOString() || null, nextProduct);
-    return { ...summary, ...inv, mode: configStore.load().runMode, paused: configStore.load().schedulerPaused };
+    const summary = db.dashboardSummary(next?.at.toISOString() || null, selected?.product.name || null);
+    return { ...summary, ...inv, mode: cfg.runMode, paused: cfg.schedulerPaused };
   });
   ipcMain.handle('app:log-path', () => logger.getPath());
 }
@@ -708,8 +729,9 @@ if (gotSingleInstanceLock) {
     logger = new AppLogger();
     scheduler = new Scheduler();
 
+    const migratedImages = migrateLegacyProductImages();
     db.recoverInterruptedJobs();
-    logger.write('APP_START', { version: app.getVersion() });
+    logger.write('APP_START', { version: app.getVersion(), migratedImages });
     applyWindowsStartup();
     createTray();
     registerIpc();
