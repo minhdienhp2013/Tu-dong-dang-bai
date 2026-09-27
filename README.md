@@ -1,4 +1,4 @@
-# Auto Social Minh Điến — v0.2.1
+# Auto Social Minh Điến — v0.2.2
 
 Ứng dụng Windows desktop local-first để:
 
@@ -243,7 +243,7 @@ Kết quả nằm trong:
 
 ```text
 release/
-  Auto Social Minh Dien Setup 0.2.1.exe
+  Auto Social Minh Dien Setup 0.2.2.exe
 ```
 
 Build dùng `--publish never`, nên không cần `GH_TOKEN` chỉ để đóng gói installer.
@@ -304,10 +304,12 @@ Các phần đó được giữ lại cho bước sau để không làm tăng r�
 
 ## Node.js 24
 
-Từ nhánh nâng cấp Node 24:
+Từ v0.2.2:
 - runtime development chuẩn là **Node.js 24.x**;
-- `better-sqlite3` dùng dòng **13.x**;
-- setup script từ chối Node major khác 24 để tránh lỗi native module khó hiểu;
-- CI Windows kiểm tra trực tiếp `require('better-sqlite3')` và tạo database in-memory trước khi build app.
+- SQLite dùng trực tiếp module tích hợp `node:sqlite`, không còn phụ thuộc `better-sqlite3`;
+- không còn bước native rebuild bằng node-gyp khi `npm install`;
+- vì vậy máy Windows không cần Visual Studio C++ Build Tools chỉ để cài/chạy ứng dụng;
+- Electron 38.8.6 dùng Node 22.22.0, đã có sẵn `node:sqlite`;
+- CI Windows kiểm tra SQLite cả trên Node 24 của máy build và Node tích hợp bên trong Electron trước khi đóng gói.
 
-Nếu trước đó đã chạy `npm install` bằng Node khác, nên xóa `node_modules` và `package-lock.json` rồi cài lại.
+Nếu trước đó đã cài bản dùng `better-sqlite3`, hãy xóa `node_modules` và `package-lock.json` rồi chạy lại `npm install`.
