@@ -2,7 +2,7 @@ const $ = id => document.getElementById(id);
 let state = {
   categories: [], products: [], selectedCategoryId: null, editingProductId: null,
   editingCategoryId: null, editingContentId: null, editingStyleId: null,
-  contents: [], images: [], styles: []
+  contents: [], images: [], styles: [], selectorProducts: []
 };
 let currentDraft = null;
 let currentProducts = [];
@@ -133,13 +133,25 @@ function renderCategoryTree(){
   $('categoryTree').querySelectorAll('.category-item').forEach(b=>b.onclick=async()=>{state.selectedCategoryId=b.dataset.cat?Number(b.dataset.cat):null;renderCategoryTree();await loadProducts();});
   $('categoryTree').querySelectorAll('.edit-cat').forEach(b=>b.onclick=()=>openCategoryDialog(Number(b.dataset.id)));
 }
-async function loadProducts(){state.products=await window.autoSocial.listProducts(state.selectedCategoryId);renderProducts();refreshProductSelects();}
+async function loadProducts(){state.products=await window.autoSocial.listProducts(state.selectedCategoryId);renderProducts();}
 function renderProducts(){
   if(!state.products.length){$('productList').innerHTML='<div class="empty">Chưa có sản phẩm.</div>';return;}
   $('productList').innerHTML=state.products.map(p=>'<button class="product-card" data-id="'+p.id+'"><div class="product-card-title">'+esc(p.name)+'</div><div class="muted">'+esc(p.category_name||'Chưa phân loại')+'</div><div class="tags-preview">'+esc(p.default_hashtags||'')+'</div><span class="badge '+(p.active?'ok':'muted-badge')+'">'+(p.active?'Đang dùng':'Tạm ẩn')+'</span></button>').join('');
   $('productList').querySelectorAll('.product-card').forEach(b=>b.onclick=()=>openProduct(Number(b.dataset.id)));
 }
-function refreshProductSelects(){const opts=['<option value="">Chọn sản phẩm</option>'].concat(state.products.map(p=>'<option value="'+p.id+'">'+esc(p.name)+'</option>')).join('');$('contentProductFilter').innerHTML=opts;$('scheduleProduct').innerHTML=opts;}
+function refreshProductSelects(contentValue='',scheduleValue=''){
+  const products=state.selectorProducts;
+  const opts=['<option value="">Chọn sản phẩm</option>'].concat(
+    products.map(p=>'<option value="'+p.id+'">'+esc(p.name)+(p.active?'':' (tạm ẩn)')+'</option>')
+  ).join('');
+  $('contentProductFilter').innerHTML=opts;
+  $('scheduleProduct').innerHTML=opts;
+  if(contentValue&&products.some(p=>String(p.id)===String(contentValue)))$('contentProductFilter').value=String(contentValue);
+  if(scheduleValue&&products.some(p=>String(p.id)===String(scheduleValue)))$('scheduleProduct').value=String(scheduleValue);
+  const hasProducts=products.length>0;
+  $('generateContentBtn').disabled=!hasProducts;
+  $('manualContentBtn').disabled=!hasProducts;
+}
 $('addCategoryBtn').onclick=()=>openCategoryDialog(null);
 function openCategoryDialog(id){state.editingCategoryId=id;const c=id?state.categories.find(x=>x.id===id):null;$('categoryDialogTitle').textContent=id?'Sửa danh mục':'Thêm danh mục';$('deleteCategoryDialogBtn').classList.toggle('hidden',!id);$('categoryNameInput').value=c?.name||'';$('categoryParentSelect').innerHTML=buildCategoryOptions(false,id);$('categoryParentSelect').value=c?.parent_id||'';$('categoryDialog').showModal();}
 $('deleteCategoryDialogBtn').onclick=async()=>{if(!state.editingCategoryId)return;if(!confirm('Xóa danh mục này?'))return;await window.autoSocial.deleteCategory(state.editingCategoryId);$('categoryDialog').close();state.editingCategoryId=null;state.selectedCategoryId=null;await loadCategories();await loadProducts();};
@@ -168,14 +180,28 @@ function renderImages(){
   });
 }
 
-async function loadAllProductsForSelectors(){state.products=await window.autoSocial.listProducts();refreshProductSelects();}
-async function loadContents(){await loadAllProductsForSelectors();const pid=$('contentProductFilter').value?Number($('contentProductFilter').value):undefined;state.contents=await window.autoSocial.listContents(pid);renderContents();}
-$('contentProductFilter').onchange=loadContents;
-$('generateContentBtn').onclick=async()=>{const pid=Number($('contentProductFilter').value);if(!pid)return alert('Chọn sản phẩm trước.');setStatus('✨ AI đang tạo nội dung...');try{const item=await window.autoSocial.generateContent(pid);await loadContents();openContentDialog(item);setStatus('✅ AI đã tạo nội dung');}catch(e){setStatus('❌ '+e.message);alert(e.message);}};
+async function loadAllProductsForSelectors(){
+  const contentValue=$('contentProductFilter').value;
+  const scheduleValue=$('scheduleProduct').value;
+  state.selectorProducts=await window.autoSocial.listProducts();
+  refreshProductSelects(contentValue,scheduleValue);
+}
+async function loadContents(reloadProducts=true){
+  const selectedBefore=$('contentProductFilter').value;
+  if(reloadProducts)await loadAllProductsForSelectors();
+  if(selectedBefore&&state.selectorProducts.some(p=>String(p.id)===String(selectedBefore))){
+    $('contentProductFilter').value=String(selectedBefore);
+  }
+  const pid=$('contentProductFilter').value?Number($('contentProductFilter').value):undefined;
+  state.contents=await window.autoSocial.listContents(pid);
+  renderContents();
+}
+$('contentProductFilter').onchange=()=>loadContents(false);
+$('generateContentBtn').onclick=async()=>{const pid=Number($('contentProductFilter').value);if(!pid)return alert('Chọn sản phẩm trước.');setStatus('✨ AI đang tạo nội dung...');try{const item=await window.autoSocial.generateContent(pid);await loadContents(false);openContentDialog(item);setStatus('✅ AI đã tạo nội dung');}catch(e){const msg=friendlyError(e);setStatus('❌ '+msg);alert(msg);}};
 $('manualContentBtn').onclick=()=>{const pid=Number($('contentProductFilter').value);if(!pid)return alert('Chọn sản phẩm trước.');state.editingContentId=null;$('contentDialogTitle').textContent='Viết nội dung thủ công';$('contentTitleInput').value='';$('contentCaptionInput').value='';$('contentHashtagsInput').value='';$('contentStatusInput').value='draft';$('contentDialog').dataset.productId=String(pid);$('contentDialog').showModal();};
-function renderContents(){if(!state.contents.length){$('contentList').innerHTML='<div class="empty">Chưa có nội dung.</div>';return;}$('contentList').innerHTML=state.contents.map(c=>'<article class="content-card"><div class="content-head"><div><b>'+esc(c.product_name||'')+'</b><h3>'+esc(c.title||'(không tiêu đề)')+'</h3></div><span class="badge">'+statusLabel(c.status)+'</span></div><p>'+esc(c.caption||'').replace(/\n/g,'<br>')+'</p><div class="hashtags">'+esc(c.hashtags||'')+'</div><div class="row compact"><button class="mini edit-content" data-id="'+c.id+'">✏️ Sửa</button><button class="mini approve-content" data-id="'+c.id+'">✅ Duyệt</button><button class="mini danger delete-content" data-id="'+c.id+'">🗑</button></div></article>').join('');document.querySelectorAll('.edit-content').forEach(b=>b.onclick=()=>openContentDialog(state.contents.find(x=>x.id===Number(b.dataset.id))));document.querySelectorAll('.approve-content').forEach(b=>b.onclick=async()=>{await window.autoSocial.updateContent(Number(b.dataset.id),{status:'approved'});await loadContents();});document.querySelectorAll('.delete-content').forEach(b=>b.onclick=async()=>{if(confirm('Xóa nội dung này?')){await window.autoSocial.deleteContent(Number(b.dataset.id));await loadContents();}});}
+function renderContents(){if(!state.contents.length){$('contentList').innerHTML='<div class="empty">Chưa có nội dung.</div>';return;}$('contentList').innerHTML=state.contents.map(c=>'<article class="content-card"><div class="content-head"><div><b>'+esc(c.product_name||'')+'</b><h3>'+esc(c.title||'(không tiêu đề)')+'</h3></div><span class="badge">'+statusLabel(c.status)+'</span></div><p>'+esc(c.caption||'').replace(/\n/g,'<br>')+'</p><div class="hashtags">'+esc(c.hashtags||'')+'</div><div class="row compact"><button class="mini edit-content" data-id="'+c.id+'">✏️ Sửa</button><button class="mini approve-content" data-id="'+c.id+'">✅ Duyệt</button><button class="mini danger delete-content" data-id="'+c.id+'">🗑</button></div></article>').join('');document.querySelectorAll('.edit-content').forEach(b=>b.onclick=()=>openContentDialog(state.contents.find(x=>x.id===Number(b.dataset.id))));document.querySelectorAll('.approve-content').forEach(b=>b.onclick=async()=>{await window.autoSocial.updateContent(Number(b.dataset.id),{status:'approved'});await loadContents(false);});document.querySelectorAll('.delete-content').forEach(b=>b.onclick=async()=>{if(confirm('Xóa nội dung này?')){await window.autoSocial.deleteContent(Number(b.dataset.id));await loadContents();}});}
 function openContentDialog(item){state.editingContentId=item?.id||null;$('contentDialogTitle').textContent=item?.source==='ai'?'Nội dung AI':'Nội dung bài đăng';$('contentTitleInput').value=item?.title||'';$('contentCaptionInput').value=item?.caption||'';$('contentHashtagsInput').value=item?.hashtags||'';$('contentStatusInput').value=item?.status||'draft';$('contentDialog').dataset.productId=String(item?.product_id||$('contentProductFilter').value||'');$('contentDialog').showModal();}
-$('saveContentDialogBtn').onclick=async e=>{e.preventDefault();const data={title:$('contentTitleInput').value.trim(),caption:$('contentCaptionInput').value.trim(),hashtags:$('contentHashtagsInput').value.trim(),status:$('contentStatusInput').value};if(!data.caption)return alert('Nội dung không được để trống.');if(state.editingContentId)await window.autoSocial.updateContent(state.editingContentId,data);else await window.autoSocial.saveManualContent(Number($('contentDialog').dataset.productId),data);$('contentDialog').close();state.editingContentId=null;await loadContents();};
+$('saveContentDialogBtn').onclick=async e=>{e.preventDefault();const data={title:$('contentTitleInput').value.trim(),caption:$('contentCaptionInput').value.trim(),hashtags:$('contentHashtagsInput').value.trim(),status:$('contentStatusInput').value};if(!data.caption)return alert('Nội dung không được để trống.');if(state.editingContentId)await window.autoSocial.updateContent(state.editingContentId,data);else await window.autoSocial.saveManualContent(Number($('contentDialog').dataset.productId),data);$('contentDialog').close();state.editingContentId=null;await loadContents(false);};
 
 $('newScheduleBtn').onclick=async()=>{await loadAllProductsForSelectors();const c=await window.autoSocial.getConfig();$('scheduleProduct').value='';$('scheduleContent').innerHTML='<option value="">Chọn sản phẩm trước</option>';$('scheduleImagePicker').innerHTML='<div class="empty">Chọn sản phẩm trước.</div>';$('scheduleAt').value='';$('scheduleMode').value=c.runMode||'test';$('scheduleDialog').showModal();};
 $('scheduleProduct').onchange=async()=>{const pid=Number($('scheduleProduct').value);if(!pid)return;const res=await Promise.all([window.autoSocial.listContents(pid),window.autoSocial.listImages(pid)]);const contents=res[0],images=res[1];const usable=contents.filter(c=>c.status!=='used');$('scheduleContent').innerHTML=['<option value="">Chọn nội dung</option>'].concat(usable.map(c=>'<option value="'+c.id+'">'+esc((c.title||c.caption).slice(0,70))+'</option>')).join('');$('scheduleImagePicker').innerHTML=images.filter(i=>i.active).map(i=>'<label class="picker-card"><input type="checkbox" value="'+i.id+'" checked><img src="'+fileUrl(i.file_path)+'"><span>'+esc(i.note||'Không ghi chú')+'</span></label>').join('')||'<div class="empty">Chưa có ảnh hoạt động.</div>';};
