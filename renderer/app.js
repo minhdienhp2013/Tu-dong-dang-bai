@@ -75,7 +75,15 @@ async function generateDraft(){
     $('draftCaption').value=currentDraft.caption;
     $('draftModeNote').textContent=(currentDraft.mode||'test')==='test'?'🧪 TEST: sẽ dừng trước nút Đăng':'🤖 AUTO: sẽ tự bấm Đăng';
     $('draftBox').classList.remove('hidden');
-    currentProducts=await window.autoSocial.scan();
+    if(currentDraft.productId){
+      const rows=await window.autoSocial.listImages(currentDraft.productId);
+      currentProducts=[{
+        folderPath:currentDraft.productFolder,
+        images:rows.filter(img=>img.active).map(img=>img.file_path)
+      }];
+    }else{
+      currentProducts=[];
+    }
     renderDraftImages();
     setStatus('✅ Đã tạo bài. Hãy kiểm tra nội dung và ảnh.');
   }catch(e){const msg=friendlyError(e);setStatus('❌ '+msg);alert(msg);}
@@ -228,8 +236,7 @@ $('deleteStyleDialogBtn').onclick=async()=>{if(!state.editingStyleId)return;if(!
 
 function providerUI(){const deep=$('aiProvider').value==='deepseek';$('deepseekFields').classList.toggle('hidden',!deep);$('ollamaFields').classList.toggle('hidden',deep);}
 $('aiProvider').onchange=providerUI;
-async function loadSettings(){const c=await window.autoSocial.getConfig();$('rootFolder').value=c.rootFolder||'';$('runMode').value=c.runMode||'test';$('autoPostEnabled').checked=!!c.autoPostEnabled;$('postingTimes').value=(c.postingTimes||[]).join(', ');$('autoStartWindows').checked=!!c.autoStartWindows;$('startMinimized').checked=!!c.startMinimized;$('minimizeToTray').checked=!!c.minimizeToTray;$('keepRunningInTray').checked=!!c.keepRunningInTray;$('aiProvider').value=c.aiProvider||'deepseek';$('deepseekApiKey').value='';$('deepseekApiKey').placeholder=c.hasDeepseekApiKey?'Đã lưu an toàn — để trống để giữ nguyên':'sk-...';$('deepseekModel').value=c.deepseekModel||'deepseek-chat';$('ollamaUrl').value=c.ollamaUrl||'http://127.0.0.1:11434';$('ollamaModel').value=c.ollamaModel||'qwen2.5:3b';$('stylePrompt').value=c.stylePrompt||'';$('repeatDays').value=c.daysBeforeRepeatProduct??7;$('imageReuseAfterDays').value=c.imageReuseAfterDays??30;$('imagesPerPost').value=c.imagesPerPost??4;providerUI();}
-$('chooseFolder').onclick=async()=>{const c=await window.autoSocial.chooseFolder();if(c)$('rootFolder').value=c.rootFolder||'';};
+async function loadSettings(){const c=await window.autoSocial.getConfig();$('runMode').value=c.runMode||'test';$('autoPostEnabled').checked=!!c.autoPostEnabled;$('postingTimes').value=(c.postingTimes||[]).join(', ');$('autoStartWindows').checked=!!c.autoStartWindows;$('startMinimized').checked=!!c.startMinimized;$('minimizeToTray').checked=!!c.minimizeToTray;$('keepRunningInTray').checked=!!c.keepRunningInTray;$('aiProvider').value=c.aiProvider||'deepseek';$('deepseekApiKey').value='';$('deepseekApiKey').placeholder=c.hasDeepseekApiKey?'Đã lưu an toàn — để trống để giữ nguyên':'sk-...';$('deepseekModel').value=c.deepseekModel||'deepseek-chat';$('ollamaUrl').value=c.ollamaUrl||'http://127.0.0.1:11434';$('ollamaModel').value=c.ollamaModel||'qwen2.5:3b';$('stylePrompt').value=c.stylePrompt||'';$('repeatDays').value=c.daysBeforeRepeatProduct??7;$('imageReuseAfterDays').value=c.imageReuseAfterDays??30;$('imagesPerPost').value=c.imagesPerPost??4;providerUI();}
 $('saveSettingsBtn').onclick=async()=>{await window.autoSocial.saveConfig({runMode:$('runMode').value,autoPostEnabled:$('autoPostEnabled').checked,postingTimes:$('postingTimes').value.split(',').map(x=>x.trim()).filter(Boolean),autoStartWindows:$('autoStartWindows').checked,startMinimized:$('startMinimized').checked,minimizeToTray:$('minimizeToTray').checked,keepRunningInTray:$('keepRunningInTray').checked,aiProvider:$('aiProvider').value,deepseekApiKey:$('deepseekApiKey').value.trim(),deepseekModel:$('deepseekModel').value.trim(),ollamaUrl:$('ollamaUrl').value.trim(),ollamaModel:$('ollamaModel').value.trim(),stylePrompt:$('stylePrompt').value.trim(),daysBeforeRepeatProduct:Number($('repeatDays').value||7),imageReuseAfterDays:Number($('imageReuseAfterDays').value||30),imagesPerPost:Number($('imagesPerPost').value||4)});setStatus('✅ Đã lưu cài đặt');await loadDashboard();};
 $('loginBtn').onclick=async()=>{
   setStatus('🌐 Đang mở trình duyệt Facebook...');
