@@ -578,6 +578,7 @@ function nextScheduleInfo() {
 }
 
 function registerIpc() {
+  ipcMain.handle('app:version', () => app.getVersion());
   ipcMain.handle('config:get', () => {
     const cfg = configStore.load();
     return { ...cfg, deepseekApiKey: '', hasDeepseekApiKey: !!cfg.deepseekApiKey };
