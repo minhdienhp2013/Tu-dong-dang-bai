@@ -51,7 +51,7 @@
     <section id="tab-catalog" class="tab-panel">
       <div class="grid-main">
         <aside class="card sidebar"><div class="section-title-row"><h2>Danh mục</h2><button id="addCategoryBtn" class="icon-btn">＋</button></div><div id="categoryTree" class="category-tree"></div></aside>
-        <section class="card"><div class="section-title-row"><div><h2>Sản phẩm</h2><p class="muted">Danh mục, mục con, ảnh và ghi chú từng ảnh</p></div><button id="addProductBtn">＋ Thêm sản phẩm</button></div><div id="productList" class="product-list"></div></section>
+        <section class="card"><div class="section-title-row"><div><h2>Sản phẩm</h2><p class="muted">Danh mục, sản phẩm, ảnh và nội dung đều quản lý trong app</p></div><button id="addProductBtn">＋ Thêm sản phẩm</button></div><div id="productList" class="product-list"></div></section>
       </div>
       <section id="productEditor" class="card hidden">
         <div class="section-title-row"><h2 id="productEditorTitle">Chi tiết sản phẩm</h2><button id="closeProductEditor" class="secondary">Đóng</button></div>
@@ -127,8 +127,8 @@
         </section>
 
         <section class="card full">
-          <h2>Kho ảnh local</h2>
-          <div class="row"><input id="rootFolder" readonly placeholder="Chưa chọn thư mục" /><button id="chooseFolder">📁 Chọn</button></div>
+          <h2>Quy tắc chọn bài</h2>
+          <p class="muted">Sản phẩm, ảnh và nội dung đều được quản lý trực tiếp trong ứng dụng.</p>
           <div class="form-grid">
             <div><label>Không lặp cùng mặt hàng trong</label><input id="repeatDays" type="number" min="0" max="365" /></div>
             <div><label>Cho phép dùng lại ảnh sau (ngày)</label><input id="imageReuseAfterDays" type="number" min="0" max="3650" /></div>
