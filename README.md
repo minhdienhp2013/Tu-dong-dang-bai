@@ -1,4 +1,4 @@
-# Auto Social Minh Điến — v0.2.4
+# Auto Social Minh Điến — v0.2.5
 
 Ứng dụng Windows desktop local-first để:
 
@@ -243,7 +243,7 @@ Kết quả nằm trong:
 
 ```text
 release/
-  Auto Social Minh Dien Setup 0.2.4.exe
+  Auto Social Minh Dien Setup 0.2.5.exe
 ```
 
 Build dùng `--publish never`, nên không cần `GH_TOKEN` chỉ để đóng gói installer.
@@ -343,3 +343,13 @@ Vì vậy:
 - scheduler cũng có thể chạy từ Content Manager dù chưa cấu hình rootFolder.
 
 Nếu một sản phẩm trong Content Manager trùng tên với thư mục local, bản trong Content Manager được ưu tiên để tránh chọn trùng.
+
+
+## Sửa chọn sản phẩm trong tab Nội dung
+
+Từ v0.2.5:
+- dropdown sản phẩm trong tab **Nội dung** có state riêng;
+- không còn bị reset về "Chọn sản phẩm" ngay sau khi người dùng chọn;
+- lọc danh mục ở tab **Sản phẩm** không làm mất sản phẩm ở tab Nội dung/Lịch;
+- sau khi AI tạo bài, sửa, duyệt hoặc lưu nội dung, sản phẩm đang chọn vẫn được giữ nguyên;
+- nếu chưa có sản phẩm, nút tạo AI/viết thủ công bị khóa thay vì cho thao tác mơ hồ.
