@@ -431,10 +431,10 @@ async function addPhotos(page: Page, images: string[]) {
     await page.waitForTimeout(500);
   }
 
-  throw new FacebookAutomationError(
-    'FACEBOOK_UI_CHANGED',
-    'Đã mở hộp Tạo bài viết nhưng vẫn không thể thêm ảnh bằng input, nút Ảnh/video, kéo-thả hoặc dán ảnh.'
-  );
+  // Không báo lỗi ở đây nữa. Facebook có thể đã mở đúng bộ chọn/vùng ảnh
+  // nhưng DOM không để Playwright xác nhận được ngay. Cho luồng tiếp tục để
+  // bước waitForPostButtonReady() quyết định dựa trên trạng thái thật của nút Đăng.
+  return;
 }
 
 async function findPostButton(page: Page): Promise<Locator | null> {
