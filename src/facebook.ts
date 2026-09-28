@@ -214,7 +214,16 @@ async function clickPhotoControl(page: Page, dialog: Locator, images: string[]):
   const candidates: Locator[] = [];
 
   for (const selector of FACEBOOK_SELECTORS.photoButtonSelectors) {
-    candidates.push(dialog.locator(selector).first());
+    const candidate = dialog.locator(selector).first();
+    candidates.push(candidate);
+
+    // Khi selector trỏ vào icon <img>, thử cả phần tử cha clickable.
+    // HTML Facebook hiện tại có thể không đặt aria-label trực tiếp trên icon.
+    if (selector.startsWith('img[')) {
+      candidates.push(
+        candidate.locator('xpath=ancestor::*[@role="button" or @tabindex="0"][1]')
+      );
+    }
   }
 
   for (const text of FACEBOOK_SELECTORS.photoTexts) {
@@ -226,8 +235,8 @@ async function clickPhotoControl(page: Page, dialog: Locator, images: string[]):
     if (!await candidate.isVisible().catch(() => false)) continue;
 
     try {
-      const chooserPromise = page.waitForEvent('filechooser', { timeout: 1800 }).catch(() => null);
-      await candidate.click({ timeout: 4000 });
+      const chooserPromise = page.waitForEvent('filechooser', { timeout: 2200 }).catch(() => null);
+      await candidate.click({ timeout: 4000, force: true });
       const chooser = await chooserPromise;
 
       if (chooser) {
@@ -235,11 +244,150 @@ async function clickPhotoControl(page: Page, dialog: Locator, images: string[]):
         return true;
       }
 
-      // Nhiều phiên bản Facebook chỉ tạo input file ẩn sau lần click đầu,
-      // không mở file chooser ngay.
-      return true;
+      // Nhiều bản Facebook chỉ tạo input file ẩn sau khi click Ảnh/video.
+      await page.waitForTimeout(350);
+      if (await setImagesOnInputs(dialog, images)) return true;
+      if (await setImagesOnInputs(page, images, false)) return true;
     } catch {
       // Thử control tiếp theo.
+    }
+  }
+
+  return false;
+}
+
+type ComposerMediaEvidence = {
+  imageCount: number;
+  blobImageCount: number;
+  backgroundImageCount: number;
+  removeControlCount: number;
+};
+
+async function getComposerMediaEvidence(dialog: Locator): Promise<ComposerMediaEvidence> {
+  const [
+    imageCount,
+    blobImageCount,
+    backgroundImageCount,
+    removeControlCount
+  ] = await Promise.all([
+    dialog.locator('img').count().catch(() => 0),
+    dialog.locator('img[src^="blob:"], img[src^="data:image/"]').count().catch(() => 0),
+    dialog.locator('[style*="background-image"]').count().catch(() => 0),
+    dialog.locator(
+      [
+        '[aria-label*="Xóa ảnh"]',
+        '[aria-label*="Xoá ảnh"]',
+        '[aria-label*="Remove photo"]',
+        '[aria-label*="Remove image"]',
+        '[aria-label*="Chỉnh sửa ảnh"]',
+        '[aria-label*="Edit photo"]'
+      ].join(',')
+    ).count().catch(() => 0)
+  ]);
+
+  return { imageCount, blobImageCount, backgroundImageCount, removeControlCount };
+}
+
+function hasNewComposerMedia(before: ComposerMediaEvidence, after: ComposerMediaEvidence) {
+  return (
+    after.imageCount > before.imageCount ||
+    after.blobImageCount > before.blobImageCount ||
+    after.backgroundImageCount > before.backgroundImageCount ||
+    after.removeControlCount > before.removeControlCount
+  );
+}
+
+function imageMimeType(filePath: string) {
+  switch (path.extname(filePath).toLowerCase()) {
+    case '.png': return 'image/png';
+    case '.webp': return 'image/webp';
+    case '.gif': return 'image/gif';
+    case '.bmp': return 'image/bmp';
+    case '.jpg':
+    case '.jpeg':
+    default:
+      return 'image/jpeg';
+  }
+}
+
+async function dispatchImagesToComposer(
+  page: Page,
+  dialog: Locator,
+  images: string[],
+  method: 'drop' | 'paste'
+): Promise<boolean> {
+  const editor = await findVisibleComposerEditor(dialog);
+  const targets = editor ? [editor, dialog] : [dialog];
+
+  const payload = images.map(filePath => ({
+    name: path.basename(filePath),
+    type: imageMimeType(filePath),
+    base64: fs.readFileSync(filePath).toString('base64')
+  }));
+
+  for (const target of targets) {
+    if (!await target.isVisible().catch(() => false)) continue;
+
+    const before = await getComposerMediaEvidence(dialog);
+
+    try {
+      await target.evaluate((element, arg) => {
+        const transfer = new DataTransfer();
+
+        for (const item of arg.files) {
+          const binary = atob(item.base64);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+          }
+
+          transfer.items.add(
+            new File([bytes], item.name, {
+              type: item.type,
+              lastModified: Date.now()
+            })
+          );
+        }
+
+        if (arg.method === 'drop') {
+          element.dispatchEvent(new DragEvent('dragenter', {
+            bubbles: true,
+            cancelable: true,
+            dataTransfer: transfer
+          }));
+          element.dispatchEvent(new DragEvent('dragover', {
+            bubbles: true,
+            cancelable: true,
+            dataTransfer: transfer
+          }));
+          element.dispatchEvent(new DragEvent('drop', {
+            bubbles: true,
+            cancelable: true,
+            dataTransfer: transfer
+          }));
+        } else {
+          element.dispatchEvent(new ClipboardEvent('paste', {
+            bubbles: true,
+            cancelable: true,
+            clipboardData: transfer
+          }));
+        }
+      }, { files: payload, method });
+
+      // Facebook cần một chút thời gian để tạo vùng preview/upload.
+      const deadline = Date.now() + 4500;
+      while (Date.now() < deadline) {
+        await page.waitForTimeout(350);
+
+        // Nếu Facebook tạo input thật sau drop/paste thì ưu tiên dùng input đó.
+        if (await setImagesOnInputs(dialog, images)) return true;
+        if (await setImagesOnInputs(page, images, false)) return true;
+
+        const after = await getComposerMediaEvidence(dialog);
+        if (hasNewComposerMedia(before, after)) return true;
+      }
+    } catch {
+      // Thử target/phương thức tiếp theo.
     }
   }
 
@@ -261,30 +409,31 @@ async function addPhotos(page: Page, images: string[]) {
   // Lớp 2: Facebook đôi khi portal input ra ngoài dialog.
   if (await setImagesOnInputs(page, images, false)) return;
 
-  // Lớp 3: bấm Ảnh/video để Facebook tạo input/chooser.
-  const deadline = Date.now() + 15_000;
-  let clickedPhotoControl = false;
+  // Lớp 3: tìm/click nút Ảnh-video, bao gồm fallback theo icon hiện tại.
+  if (await clickPhotoControl(page, dialog, images)) return;
 
+  // Lớp 4: mô phỏng kéo-thả ảnh trực tiếp vào ô "Bạn đang nghĩ gì?".
+  // Cách này tương ứng thao tác thủ công mà người dùng xác nhận đang hoạt động.
+  if (await dispatchImagesToComposer(page, dialog, images, 'drop')) return;
+
+  // Lớp 5: mô phỏng copy/paste ảnh vào editor.
+  if (await dispatchImagesToComposer(page, dialog, images, 'paste')) return;
+
+  // Lớp 6: Facebook có thể tạo input/control trễ, tiếp tục dò thêm một lúc.
+  const deadline = Date.now() + 12_000;
   while (Date.now() < deadline) {
     await assertSafeSession(page);
 
-    if (!clickedPhotoControl) {
-      clickedPhotoControl = await clickPhotoControl(page, dialog, images);
-    }
-
-    // Sau click, input có thể xuất hiện trong dialog hoặc ở body.
     if (await setImagesOnInputs(dialog, images)) return;
     if (await setImagesOnInputs(page, images, false)) return;
+    if (await clickPhotoControl(page, dialog, images)) return;
 
-    // Nếu lần click đầu chỉ mở vùng "Thêm vào bài viết", cho phép tìm/click
-    // lại một control Ảnh/video mới xuất hiện.
-    clickedPhotoControl = false;
     await page.waitForTimeout(500);
   }
 
   throw new FacebookAutomationError(
     'FACEBOOK_UI_CHANGED',
-    'Đã mở hộp Tạo bài viết nhưng không tìm thấy bộ chọn ảnh sau 15 giây. Facebook có thể vừa thay đổi giao diện tải ảnh.'
+    'Đã mở hộp Tạo bài viết nhưng vẫn không thể thêm ảnh bằng input, nút Ảnh/video, kéo-thả hoặc dán ảnh.'
   );
 }
 
