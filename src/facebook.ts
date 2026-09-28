@@ -604,29 +604,16 @@ async function clickReadyPostButton(page: Page, button: Locator) {
   await button.scrollIntoViewIfNeeded().catch(() => undefined);
   await page.waitForTimeout(500);
 
-  // Click thường trước. Nếu Playwright không thể actionability-click, mới fallback
-  // sang focus + Enter hoặc force click. Không click lặp lại sau khi click thường
-  // đã thành công để tránh đăng hai lần.
   try {
-    await button.click({ timeout: 7000 });
-    return;
-  } catch (firstError) {
-    try {
-      await button.focus({ timeout: 2500 });
-      await page.keyboard.press('Enter');
-      return;
-    } catch {
-      try {
-        await button.click({ timeout: 3500, force: true });
-        return;
-      } catch (finalError) {
-        throw new FacebookAutomationError(
-          'FACEBOOK_UI_CHANGED',
-          'Đã tìm thấy nút Đăng nhưng không thể bấm: ' +
-          String((finalError as any)?.message || finalError || firstError)
-        );
-      }
-    }
+    // Chỉ gửi đúng MỘT click. force=true phù hợp với nút div[role=button]
+    // của Facebook và tránh vòng fallback có nguy cơ click lặp.
+    await button.click({ timeout: 7000, force: true });
+  } catch (error) {
+    throw new FacebookAutomationError(
+      'POST_UNCERTAIN',
+      'Đã bắt đầu thao tác bấm nút Đăng nhưng không xác nhận được click. Hãy kiểm tra trang cá nhân trước khi thử lại. Chi tiết: ' +
+      String((error as any)?.message || error)
+    );
   }
 }
 
@@ -867,8 +854,10 @@ export async function publishToFacebook(
       };
     }
 
-    await clickReadyPostButton(page, postButton);
+    // Từ thời điểm bắt đầu click, mọi lỗi sau đó đều phải coi là uncertain
+    // để scheduler không thể đăng trùng.
     postClicked = true;
+    await clickReadyPostButton(page, postButton);
 
     try {
       await waitForPostConfirmation(page, composer);
