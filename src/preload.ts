@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('autoSocial', {
   getVersion: () => ipcRenderer.invoke('app:version'),
+  backupData: () => ipcRenderer.invoke('data:backup'),
+  importData: () => ipcRenderer.invoke('data:import'),
   getConfig: () => ipcRenderer.invoke('config:get'),
   saveConfig: (data: any) => ipcRenderer.invoke('config:save', data),
   listCategories: () => ipcRenderer.invoke('categories:list'),
