@@ -437,6 +437,133 @@ async function addPhotos(page: Page, images: string[]) {
   return;
 }
 
+async function composerDropPoint(page: Page, dialog: Locator) {
+  // Sau khi Facebook mở composer, editor thường đang được focus sẵn.
+  // Ưu tiên chính phần tử đang focus, không dò selector ô nhập.
+  const focused = dialog.locator(':focus').first();
+  let box = await focused.boundingBox().catch(() => null);
+
+  // Nếu focus không có bounding box, dùng chính vùng "Bạn đang nghĩ gì?".
+  if (!box) {
+    for (const text of FACEBOOK_SELECTORS.composerTexts) {
+      const hint = dialog.getByText(text, { exact: false }).first();
+      box = await hint.boundingBox().catch(() => null);
+      if (box) break;
+    }
+  }
+
+  // Fallback cuối cùng: thả vào vùng giữa của dialog composer.
+  if (!box) box = await dialog.boundingBox().catch(() => null);
+  if (!box) {
+    throw new FacebookAutomationError(
+      'FACEBOOK_UI_CHANGED',
+      'Không xác định được vùng thả ảnh trong hộp Tạo bài viết.'
+    );
+  }
+
+  return {
+    x: box.x + Math.max(12, Math.min(box.width * 0.5, box.width - 12)),
+    y: box.y + Math.max(12, Math.min(box.height * 0.5, box.height - 12))
+  };
+}
+
+async function dragImagesIntoComposer(page: Page, dialog: Locator, images: string[]) {
+  for (const img of images) {
+    if (!fs.existsSync(img)) {
+      throw new FacebookAutomationError('UPLOAD_ERROR', `Không tìm thấy ảnh: ${img}`);
+    }
+  }
+
+  const before = await getComposerMediaEvidence(dialog);
+  const point = await composerDropPoint(page, dialog);
+  const cdp = await page.context().newCDPSession(page);
+
+  try {
+    const data = {
+      items: [],
+      files: images,
+      dragOperationsMask: 1
+    };
+
+    // Kéo-thả thật ở tầng Chromium. Các khoảng chờ cố định để Facebook kịp
+    // chuyển trạng thái UI; không dùng random/humanization.
+    await cdp.send('Input.dispatchDragEvent', {
+      type: 'dragEnter', x: point.x, y: point.y, data
+    });
+    await page.waitForTimeout(450);
+
+    await cdp.send('Input.dispatchDragEvent', {
+      type: 'dragOver', x: point.x, y: point.y, data
+    });
+    await page.waitForTimeout(450);
+
+    await cdp.send('Input.dispatchDragEvent', {
+      type: 'drop', x: point.x, y: point.y, data
+    });
+  } catch {
+    // Một số Chromium/Edge có thể không nhận file drag qua CDP.
+    // Khi đó thử lại bằng DataTransfer trong DOM nhưng vẫn giữ cùng thao tác kéo-thả.
+    const ok = await dispatchImagesToComposer(page, dialog, images, 'drop');
+    if (ok) return;
+  } finally {
+    await cdp.detach().catch(() => undefined);
+  }
+
+  // Chờ preview ảnh xuất hiện trước khi gõ chữ.
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    await assertSafeSession(page);
+    await page.waitForTimeout(500);
+    const after = await getComposerMediaEvidence(dialog);
+    if (hasNewComposerMedia(before, after)) return;
+  }
+
+  // Fallback cùng cơ chế drag/drop DOM, không chuyển sang săn input file.
+  if (await dispatchImagesToComposer(page, dialog, images, 'drop')) return;
+
+  throw new FacebookAutomationError(
+    'UPLOAD_ERROR',
+    'Facebook chưa nhận ảnh sau thao tác kéo-thả. Hãy kiểm tra giao diện composer hiện tại.'
+  );
+}
+
+async function typeCaptionWithKeyboard(page: Page, dialog: Locator, caption: string) {
+  if (!caption.trim()) return;
+
+  // Sau khi mở composer Facebook đã focus sẵn vùng viết bài. Không tìm selector
+  // editor nữa; chỉ nhập text vào focus hiện tại bằng keyboard.
+  await page.waitForTimeout(900);
+
+  const lines = caption.replace(/\r\n/g, '\n').split('\n');
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    const chars = Array.from(lines[lineIndex]);
+
+    // Chia text thành block nhỏ để editor Facebook không bỏ ký tự khi UI đang
+    // đồng thời xử lý preview ảnh.
+    for (let i = 0; i < chars.length; i += 80) {
+      await page.keyboard.insertText(chars.slice(i, i + 80).join(''));
+      await page.waitForTimeout(90);
+    }
+
+    if (lineIndex < lines.length - 1) {
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(120);
+    }
+  }
+
+  await page.waitForTimeout(500);
+
+  // Chỉ xác nhận caption đã xuất hiện trong dialog; không cần biết editor nằm đâu.
+  const probe = normalizeVisibleText(caption).slice(0, 24);
+  const dialogText = normalizeVisibleText(await dialog.innerText().catch(() => ''));
+  if (probe && !dialogText.includes(probe)) {
+    throw new FacebookAutomationError(
+      'FACEBOOK_UI_CHANGED',
+      'Facebook không giữ focus ở vùng viết bài nên nội dung chưa được nhập. Không tiếp tục để tránh đăng thiếu chữ.'
+    );
+  }
+}
+
 async function findPostButton(page: Page): Promise<Locator | null> {
   const dialog = await getComposerDialog(page);
   for (const name of FACEBOOK_SELECTORS.postButtonNames) {
@@ -655,11 +782,18 @@ export async function publishToFacebook(
 
     await clickComposer(page);
     const composer = await getComposerDialog(page);
-    await fillCaption(page, caption);
+
+    // Luồng thao tác đơn giản theo đúng UI Facebook hiện tại:
+    // 1) mở composer, 2) kéo ảnh vào vùng soạn bài, 3) gõ caption bằng keyboard,
+    // 4) chờ nút Đăng sẵn sàng.
+    await page.waitForTimeout(1200);
 
     if (images.length) {
-      await addPhotos(page, images);
+      await dragImagesIntoComposer(page, composer, images);
+      await page.waitForTimeout(1200);
     }
+
+    await typeCaptionWithKeyboard(page, composer, caption);
 
     // Chờ Facebook xử lý upload và chỉ tiếp tục khi nút Đăng thực sự enabled.
     const postButton = await waitForPostButtonReady(page, images.length > 0);
