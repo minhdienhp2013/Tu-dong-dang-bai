@@ -168,8 +168,9 @@ type PostingCandidate = {
   lastPostedAt: string | null;
 };
 
-function usableImages(rows: ProductImageRecord[], reuseAfterDays: number, count: number) {
+function usableImages(rows: ProductImageRecord[], reuseAfterDays: number, count: number, allowReuse = false) {
   const active = rows.filter(image => !!image.active && fs.existsSync(image.file_path));
+  if (allowReuse) return active.slice(0, Math.max(1, count));
   const unused = active.filter(image => Number(image.used_count || 0) === 0);
   if (unused.length) return unused.slice(0, Math.max(1, count));
 
@@ -200,11 +201,11 @@ function getPostingCandidates(): PostingCandidate[] {
     .filter((item): item is PostingCandidate => !!item);
 }
 
-function choosePostingCandidate(candidates: PostingCandidate[], daysBeforeRepeat: number, imageReuseAfterDays: number) {
+function choosePostingCandidate(candidates: PostingCandidate[], daysBeforeRepeat: number, imageReuseAfterDays: number, allowImageReuse = false) {
   const cutoff = Date.now() - daysBeforeRepeat * 86400000;
   const eligible = candidates.filter(item => {
     if (item.lastPostedAt && new Date(item.lastPostedAt).getTime() >= cutoff) return false;
-    return usableImages(item.images, imageReuseAfterDays, 1).length > 0;
+    return usableImages(item.images, imageReuseAfterDays, 1, allowImageReuse).length > 0;
   });
 
   eligible.sort((a, b) => {
@@ -233,7 +234,7 @@ async function makeDraft(productId?: number): Promise<DraftPost> {
   const cfg = configStore.load();
   const candidates = getPostingCandidates();
   const preferred = productId ? candidates.find(item => item.product.id === productId) || null : null;
-  const selected = preferred || choosePostingCandidate(candidates, cfg.daysBeforeRepeatProduct, cfg.imageReuseAfterDays);
+  const selected = preferred || choosePostingCandidate(candidates, cfg.daysBeforeRepeatProduct, cfg.imageReuseAfterDays, cfg.allowImageReuse);
 
   if (!selected) {
     notify('Auto Social Minh Điến', '📦 Chưa có sản phẩm đủ điều kiện để đăng.');
@@ -242,7 +243,7 @@ async function makeDraft(productId?: number): Promise<DraftPost> {
     );
   }
 
-  const selectedImages = usableImages(selected.images, cfg.imageReuseAfterDays, cfg.imagesPerPost);
+  const selectedImages = usableImages(selected.images, cfg.imageReuseAfterDays, cfg.imagesPerPost, cfg.allowImageReuse);
   if (!selectedImages.length) {
     throw new Error('Ảnh của sản phẩm chưa đủ điều kiện dùng lại theo cài đặt hiện tại.');
   }
@@ -734,7 +735,7 @@ function registerIpc() {
   ipcMain.handle('dashboard:get', async () => {
     const cfg = configStore.load();
     const candidates = getPostingCandidates();
-    const selected = choosePostingCandidate(candidates, cfg.daysBeforeRepeatProduct, cfg.imageReuseAfterDays);
+    const selected = choosePostingCandidate(candidates, cfg.daysBeforeRepeatProduct, cfg.imageReuseAfterDays, cfg.allowImageReuse);
     const inv = db.catalogInventoryStats();
     const next = nextScheduleInfo();
     const summary = db.dashboardSummary(next?.at.toISOString() || null, selected?.product.name || null);
