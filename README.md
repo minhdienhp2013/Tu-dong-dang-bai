@@ -1,4 +1,4 @@
-# Auto Social Minh Điến — v0.3.6
+# Auto Social Minh Điến — v0.3.7
 
 Ứng dụng Windows desktop để quản lý sản phẩm, ảnh, nội dung và đăng Facebook cá nhân trong **một phần mềm duy nhất**.
 
@@ -64,8 +64,8 @@ AI chỉ nhận dữ liệu đã nhập trong app:
 - Nút đăng nhập mở Edge/Chrome thật để người dùng đăng nhập thủ công.
 - Không lưu username/password Facebook.
 - Không vượt CAPTCHA/checkpoint/2FA.
-- TEST dừng trước nút **Đăng**.
-- AUTO chỉ nên bật sau khi TEST ổn định.
+- TEST cũng đăng thật để nghiệm thu thực tế, nhưng không retry tự động.
+- AUTO dùng cho vận hành lịch tự động và retry lỗi mạng có giới hạn.
 - Nếu đã click Đăng nhưng không xác nhận chắc chắn, app ghi trạng thái `uncertain` và không retry tự động.
 
 ## Scheduler
@@ -112,7 +112,7 @@ Kết quả:
 
 ```text
 release/
-  Auto Social Minh Dien Setup 0.3.6.exe
+  Auto Social Minh Dien Setup 0.3.7.exe
 ```
 
 ## Nghiệm thu trước AUTO
@@ -240,3 +240,26 @@ Từ v0.3.6:
 - AUTO gửi đúng một click vào nút Đăng;
 - từ lúc bắt đầu click, mọi lỗi không rõ được ghi `POST_UNCERTAIN` để không tự retry và tránh bài trùng;
 - TEST vẫn cố ý dừng trước nút Đăng.
+
+
+## TEST đăng thật v0.3.7
+
+Từ v0.3.7, **TEST không còn dừng trước nút Đăng**.
+
+Cả hai mode đều tạo bài thật trên Facebook:
+- **TEST**: đăng thật đúng 1 lần; không retry mạng tự động. Dùng để nghiệm thu thực tế từng bài.
+- **AUTO**: đăng thật; dùng cho lịch tự động và có retry lỗi mạng theo giới hạn hiện tại.
+
+Quy trình TEST:
+1. chọn/tạo bài;
+2. app mở Facebook;
+3. thả ảnh;
+4. gõ caption;
+5. tìm nút `aria-label="Đăng"`;
+6. click Đăng một lần;
+7. chờ xác nhận composer đóng;
+8. ghi lịch sử là **Đã đăng**.
+
+Nếu trạng thái sau click không rõ, app ghi `POST_UNCERTAIN` và không tự thử lại để tránh đăng trùng.
+
+Giao diện hiển thị cảnh báo rõ trước khi chạy: **bài này sẽ được đăng thật lên Facebook**.

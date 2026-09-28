@@ -843,17 +843,8 @@ export async function publishToFacebook(
     const postButton = await waitForPostButtonReady(page, images.length > 0);
     await assertSafeSession(page);
 
-    if (mode === 'test') {
-      // TEST giữ Chrome mở để người dùng xem lại và tự bấm Đăng.
-      context = null;
-      return {
-        prepared: true,
-        posted: false,
-        submitted: false,
-        confirmation: 'prepared'
-      };
-    }
-
+    // Cả TEST và AUTO đều đăng thật.
+    // TEST khác AUTO ở chỗ không có retry mạng tự động; dùng để nghiệm thu một lần có kiểm soát.
     // Từ thời điểm bắt đầu click, mọi lỗi sau đó đều phải coi là uncertain
     // để scheduler không thể đăng trùng.
     postClicked = true;

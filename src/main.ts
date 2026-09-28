@@ -309,27 +309,24 @@ async function executeScheduledJob(jobId: number, draft: DraftPost) {
     const result = await publishToFacebook(cfg.browserProfileDir, draft.caption, draft.images, mode);
     logger.write('IMAGES_UPLOADED', { count: draft.images.length });
 
-    if (result.posted) {
-      db.updateScheduledJob(jobId, { status: 'posted', completed: true, errorCode: null, errorMessage: null });
-      db.markPost(draft.productName, draft.productFolder, draft.caption, draft.images, 'posted', undefined, {
-        mode, aiOriginal: draft.aiOriginal, userFinal: draft.caption, jobKey: draft.jobKey || null
-      });
-      const usedImageIds = resolvedDraftImageIds(draft);
-      if (usedImageIds.length) db.markImagesUsed(usedImageIds);
-      if (draft.contentId) db.markContentUsed(draft.contentId);
-      db.addLearning(draft.productName, draft.aiOriginal || draft.caption, draft.caption);
-      logger.write('POST_SUCCESS', { product: draft.productName });
-      notify('Auto Social Minh Điến', `✅ Đã đăng ${draft.productName} lên Facebook.`);
-      status(`✅ Đã đăng thành công: ${draft.productName}`);
-    } else {
-      db.updateScheduledJob(jobId, { status: 'prepared', completed: true, errorCode: null, errorMessage: null });
-      db.markPost(draft.productName, draft.productFolder, draft.caption, draft.images, 'prepared', undefined, {
-        mode: 'test', aiOriginal: draft.aiOriginal, userFinal: draft.caption, jobKey: draft.jobKey || null
-      });
-      logger.write('TEST_PREPARED', { product: draft.productName });
-      status('🧪 TEST MODE: Bài đã được chuẩn bị. Hãy kiểm tra và tự bấm Đăng.');
-      notify('Auto Social Minh Điến', '🧪 TEST MODE: Bài đã chuẩn bị xong. Hãy kiểm tra và tự bấm Đăng.');
+    if (!result.posted) {
+      throw new FacebookAutomationError(
+        'POST_UNCERTAIN',
+        'Facebook không xác nhận bài đã đăng. Hãy kiểm tra trang cá nhân trước khi thử lại.'
+      );
     }
+
+    db.updateScheduledJob(jobId, { status: 'posted', completed: true, errorCode: null, errorMessage: null });
+    db.markPost(draft.productName, draft.productFolder, draft.caption, draft.images, 'posted', undefined, {
+      mode, aiOriginal: draft.aiOriginal, userFinal: draft.caption, jobKey: draft.jobKey || null
+    });
+    const usedImageIds = resolvedDraftImageIds(draft);
+    if (usedImageIds.length) db.markImagesUsed(usedImageIds);
+    if (draft.contentId) db.markContentUsed(draft.contentId);
+    db.addLearning(draft.productName, draft.aiOriginal || draft.caption, draft.caption);
+    logger.write(mode === 'test' ? 'TEST_POST_SUCCESS' : 'POST_SUCCESS', { product: draft.productName, mode });
+    notify('Auto Social Minh Điến', `✅ Đã đăng ${draft.productName} lên Facebook (${mode.toUpperCase()}).`);
+    status(`✅ Đã đăng thành công: ${draft.productName} [${mode.toUpperCase()}]`);
   } catch (error) {
     const info = errorInfo(error);
     const row = db.getScheduledJob(jobId);
@@ -484,23 +481,24 @@ async function publishManagedPost(postId: number) {
 
   try {
     const result = await publishToFacebook(cfg.browserProfileDir, text, images.map(i => i.file_path), mode);
-    if (result.posted) {
-      db.updateSocialPostStatus(postId, 'posted');
-      db.addPostAttempt(postId, 'posted', 'Đăng thành công');
-      db.markImagesUsed(imageIds);
-      db.markContentUsed(post.content_id);
-      if (post.content_id) {
-        const content = db.listContents(post.product_id).find(c => c.id === post.content_id);
-        if (content?.ai_original) db.addLearning(post.product_name || '', content.ai_original, content.caption);
-      }
-      notify('Auto Social Minh Điến', `✅ Đã đăng ${post.product_name || 'bài viết'} lên Facebook.`);
-      status(`✅ Đã đăng: ${post.product_name || 'bài viết'}`);
-    } else {
-      db.updateSocialPostStatus(postId, 'prepared');
-      db.addPostAttempt(postId, 'prepared', 'TEST MODE: đã chuẩn bị, chưa click Đăng');
-      status('🧪 TEST MODE: Bài đã được chuẩn bị. Hãy kiểm tra và tự bấm Đăng.');
+    if (!result.posted) {
+      throw new FacebookAutomationError(
+        'POST_UNCERTAIN',
+        'Facebook không xác nhận bài đã đăng. Hãy kiểm tra trang cá nhân trước khi thử lại.'
+      );
     }
-    return { ok: true, posted: result.posted };
+
+    db.updateSocialPostStatus(postId, 'posted');
+    db.addPostAttempt(postId, 'posted', `Đăng thành công [${mode.toUpperCase()}]`);
+    db.markImagesUsed(imageIds);
+    db.markContentUsed(post.content_id);
+    if (post.content_id) {
+      const content = db.listContents(post.product_id).find(c => c.id === post.content_id);
+      if (content?.ai_original) db.addLearning(post.product_name || '', content.ai_original, content.caption);
+    }
+    notify('Auto Social Minh Điến', `✅ Đã đăng ${post.product_name || 'bài viết'} lên Facebook (${mode.toUpperCase()}).`);
+    status(`✅ Đã đăng: ${post.product_name || 'bài viết'} [${mode.toUpperCase()}]`);
+    return { ok: true, posted: true };
   } catch (error) {
     const info = errorInfo(error);
     const latest = db.getSocialPost(postId);
@@ -529,23 +527,23 @@ async function postDraft(draft: DraftPost) {
   const mode = draft.mode || cfg.runMode;
   try {
     const result = await publishToFacebook(cfg.browserProfileDir, draft.caption, draft.images, mode);
-    if (result.posted) {
-      db.markPost(draft.productName, draft.productFolder, draft.caption, draft.images, 'posted', undefined, {
-        mode, aiOriginal: draft.aiOriginal, userFinal: draft.caption
-      });
-      const usedImageIds = resolvedDraftImageIds(draft);
-      if (usedImageIds.length) db.markImagesUsed(usedImageIds);
-      if (draft.contentId) db.markContentUsed(draft.contentId);
-      db.addLearning(draft.productName, draft.aiOriginal || draft.caption, draft.caption);
-      notify('Auto Social Minh Điến', `✅ Đã đăng ${draft.productName} lên Facebook.`);
-    } else {
-      db.markPost(draft.productName, draft.productFolder, draft.caption, draft.images, 'prepared', undefined, {
-        mode: 'test', aiOriginal: draft.aiOriginal, userFinal: draft.caption
-      });
-      db.addLearning(draft.productName, draft.aiOriginal || draft.caption, draft.caption);
-      status('🧪 TEST MODE: Bài đã được chuẩn bị. Hãy kiểm tra và tự bấm Đăng.');
+    if (!result.posted) {
+      throw new FacebookAutomationError(
+        'POST_UNCERTAIN',
+        'Facebook không xác nhận bài đã đăng. Hãy kiểm tra trang cá nhân trước khi thử lại.'
+      );
     }
-    return result;
+
+    db.markPost(draft.productName, draft.productFolder, draft.caption, draft.images, 'posted', undefined, {
+      mode, aiOriginal: draft.aiOriginal, userFinal: draft.caption
+    });
+    const usedImageIds = resolvedDraftImageIds(draft);
+    if (usedImageIds.length) db.markImagesUsed(usedImageIds);
+    if (draft.contentId) db.markContentUsed(draft.contentId);
+    db.addLearning(draft.productName, draft.aiOriginal || draft.caption, draft.caption);
+    notify('Auto Social Minh Điến', `✅ Đã đăng ${draft.productName} lên Facebook (${mode.toUpperCase()}).`);
+    status(`✅ Đã đăng thành công [${mode.toUpperCase()}]`);
+    return { ...result, posted: true };
   } catch (error) {
     const info = errorInfo(error);
     const uncertain = info.code === 'POST_UNCERTAIN';

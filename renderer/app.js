@@ -63,7 +63,7 @@ $('pauseBtn').onclick=async()=>{
   await loadDashboard();
 };
 $('postNextBtn').onclick=async()=>{
-  if(!confirm('Thực hiện bài tiếp theo theo chế độ TEST/AUTO hiện tại?'))return;
+  if(!confirm('Bài tiếp theo SẼ ĐƯỢC ĐĂNG THẬT lên Facebook theo chế độ hiện tại. Tiếp tục?'))return;
   try{await window.autoSocial.postNext();await loadDashboard();await loadHistory();}catch(e){const msg=friendlyError(e);setStatus('❌ '+msg);alert(msg);}
 };
 
@@ -73,7 +73,7 @@ async function generateDraft(){
     currentDraft=await window.autoSocial.generateDraft();
     $('draftName').textContent=currentDraft.productName;
     $('draftCaption').value=currentDraft.caption;
-    $('draftModeNote').textContent=(currentDraft.mode||'test')==='test'?'🧪 TEST: sẽ dừng trước nút Đăng':'🤖 AUTO: sẽ tự bấm Đăng';
+    $('draftModeNote').textContent=(currentDraft.mode||'test')==='test'?'🧪 TEST: SẼ ĐĂNG THẬT 1 lần, không retry':'🤖 AUTO: đăng thật + lịch/retry mạng';
     $('draftBox').classList.remove('hidden');
     if(currentDraft.productId){
       const rows=await window.autoSocial.listImages(currentDraft.productId);
@@ -117,7 +117,8 @@ $('postNowBtn').onclick=async()=>{
   if(!currentDraft.images.length)return alert('Cần ít nhất 1 ảnh.');
   currentDraft.caption=$('draftCaption').value.trim();
   if(!currentDraft.caption)return alert('Caption không được để trống.');
-  if(!confirm('Thực hiện bài này theo chế độ hiện tại?'))return;
+  const mode=(currentDraft.mode||'test').toUpperCase();
+  if(!confirm('Bài này SẼ ĐƯỢC ĐĂNG THẬT lên Facebook ở chế độ '+mode+'. Tiếp tục?'))return;
   try{
     const result=await window.autoSocial.postDraft(currentDraft);
     if(result.posted){$('draftBox').classList.add('hidden');currentDraft=null;}
