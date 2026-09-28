@@ -63,6 +63,7 @@ export class AppDb {
         product_id INTEGER NOT NULL,
         title TEXT NOT NULL DEFAULT '',
         caption TEXT NOT NULL,
+        footer_text TEXT NOT NULL DEFAULT '',
         hashtags TEXT NOT NULL DEFAULT '',
         source TEXT NOT NULL DEFAULT 'ai',
         status TEXT NOT NULL DEFAULT 'draft',
@@ -206,6 +207,7 @@ export class AppDb {
   }
 
   private migrateExistingSchema() {
+    this.ensureColumn('content_drafts', 'footer_text', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('content_drafts', 'ai_original', 'TEXT');
     this.ensureColumn('content_drafts', 'style_id', 'INTEGER');
     this.ensureColumn('social_posts', 'scheduled_local_key', 'TEXT');
@@ -447,11 +449,11 @@ export class AppDb {
       for (const content of input.contents) {
         const productId = productIds.get(content.product_id);
         if (!productId) throw new Error('Nội dung thiếu sản phẩm.');
-        let current = this.listContents(productId).find(c => c.title === content.title && c.caption === content.caption && c.hashtags === content.hashtags);
+        let current = this.listContents(productId).find(c => c.title === content.title && c.caption === content.caption && c.hashtags === content.hashtags && c.footer_text === (content.footer_text || ''));
         if (!current) {
           current = this.createContent(productId, { title: content.title, caption: content.caption, hashtags: content.hashtags },
             content.source === 'manual' ? 'manual' : 'ai', content.ai_original || undefined,
-            content.style_id == null ? null : styleIds.get(content.style_id) || null);
+            content.style_id == null ? null : styleIds.get(content.style_id) || null, content.footer_text || '');
           if (content.status === 'approved' || content.status === 'used') current = this.updateContent(current.id, { status: content.status });
           counts.contents++;
         }
@@ -508,20 +510,20 @@ export class AppDb {
     return (productId ? this.db.prepare(sql).all(productId) : this.db.prepare(sql).all()) as ContentDraftRecord[];
   }
 
-  createContent(productId: number, result: AiContentResult, source: 'ai' | 'manual' = 'ai', aiOriginal?: string, styleId?: number | null): ContentDraftRecord {
+  createContent(productId: number, result: AiContentResult, source: 'ai' | 'manual' = 'ai', aiOriginal?: string, styleId?: number | null, footerText = ''): ContentDraftRecord {
     const now = nowIso();
-    const info = this.db.prepare(`INSERT INTO content_drafts(product_id, title, caption, hashtags, source, status, ai_original, style_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?)`)
-      .run(productId, result.title.trim(), result.caption.trim(), result.hashtags.trim(), source, aiOriginal || result.caption.trim(), styleId || null, now, now);
+    const info = this.db.prepare(`INSERT INTO content_drafts(product_id, title, caption, footer_text, hashtags, source, status, ai_original, style_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?)`)
+      .run(productId, result.title.trim(), result.caption.trim(), footerText.trim(), result.hashtags.trim(), source, aiOriginal || result.caption.trim(), styleId || null, now, now);
     return this.db.prepare(`SELECT d.*, p.name AS product_name FROM content_drafts d JOIN products p ON p.id = d.product_id WHERE d.id = ?`)
       .get(info.lastInsertRowid) as ContentDraftRecord;
   }
 
-  updateContent(id: number, input: Partial<Pick<ContentDraftRecord, 'title' | 'caption' | 'hashtags' | 'status'>>): ContentDraftRecord {
+  updateContent(id: number, input: Partial<Pick<ContentDraftRecord, 'title' | 'caption' | 'footer_text' | 'hashtags' | 'status'>>): ContentDraftRecord {
     const old = this.db.prepare('SELECT * FROM content_drafts WHERE id = ?').get(id) as ContentDraftRecord;
     if (!old) throw new Error('Không tìm thấy nội dung.');
-    this.db.prepare('UPDATE content_drafts SET title = ?, caption = ?, hashtags = ?, status = ?, updated_at = ? WHERE id = ?')
-      .run(input.title ?? old.title, input.caption ?? old.caption, input.hashtags ?? old.hashtags, input.status ?? old.status, nowIso(), id);
+    this.db.prepare('UPDATE content_drafts SET title = ?, caption = ?, footer_text = ?, hashtags = ?, status = ?, updated_at = ? WHERE id = ?')
+      .run(input.title ?? old.title, input.caption ?? old.caption, input.footer_text ?? old.footer_text, input.hashtags ?? old.hashtags, input.status ?? old.status, nowIso(), id);
     return this.db.prepare(`SELECT d.*, p.name AS product_name FROM content_drafts d JOIN products p ON p.id = d.product_id WHERE d.id = ?`)
       .get(id) as ContentDraftRecord;
   }
@@ -538,13 +540,13 @@ export class AppDb {
   }
 
   getSocialPost(id: number): SocialPostRecord | null {
-    return (this.db.prepare(`SELECT sp.*, p.name AS product_name, d.title, d.caption, d.hashtags
+    return (this.db.prepare(`SELECT sp.*, p.name AS product_name, d.title, d.caption, d.footer_text, d.hashtags
       FROM social_posts sp JOIN products p ON p.id = sp.product_id
       LEFT JOIN content_drafts d ON d.id = sp.content_id WHERE sp.id = ?`).get(id) as SocialPostRecord) || null;
   }
 
   listScheduledPosts(): SocialPostRecord[] {
-    return this.db.prepare(`SELECT sp.*, p.name AS product_name, d.title, d.caption, d.hashtags
+    return this.db.prepare(`SELECT sp.*, p.name AS product_name, d.title, d.caption, d.footer_text, d.hashtags
       FROM social_posts sp JOIN products p ON p.id = sp.product_id LEFT JOIN content_drafts d ON d.id = sp.content_id
       WHERE sp.status IN ('draft','pending','preparing','scheduled','posting','prepared','failed','uncertain','posted')
       ORDER BY CASE WHEN sp.status = 'posted' THEN 1 ELSE 0 END,
@@ -555,7 +557,7 @@ export class AppDb {
   }
 
   getDueScheduledPosts(now: string): SocialPostRecord[] {
-    return this.db.prepare(`SELECT sp.*, p.name AS product_name, d.title, d.caption, d.hashtags
+    return this.db.prepare(`SELECT sp.*, p.name AS product_name, d.title, d.caption, d.footer_text, d.hashtags
       FROM social_posts sp JOIN products p ON p.id = sp.product_id LEFT JOIN content_drafts d ON d.id = sp.content_id
       WHERE sp.status = 'scheduled' AND sp.scheduled_at IS NOT NULL AND sp.scheduled_at <= ?
       ORDER BY sp.scheduled_at LIMIT 5`).all(now) as SocialPostRecord[];
@@ -566,7 +568,7 @@ export class AppDb {
   }
 
   getRetryableSocialPosts(now: string): SocialPostRecord[] {
-    return this.db.prepare(`SELECT sp.*, p.name AS product_name, d.title, d.caption, d.hashtags
+    return this.db.prepare(`SELECT sp.*, p.name AS product_name, d.title, d.caption, d.footer_text, d.hashtags
       FROM social_posts sp JOIN products p ON p.id = sp.product_id LEFT JOIN content_drafts d ON d.id = sp.content_id
       WHERE sp.status = 'failed'
         AND sp.error_code = 'NETWORK_ERROR'
@@ -611,7 +613,7 @@ export class AppDb {
   }
 
   listPostHistory(limit = 100) {
-    return this.db.prepare(`SELECT sp.*, p.name AS product_name, d.title, d.caption, d.hashtags,
+    return this.db.prepare(`SELECT sp.*, p.name AS product_name, d.title, d.caption, d.footer_text, d.hashtags,
       (SELECT COUNT(*) FROM post_attempts a WHERE a.social_post_id = sp.id) AS attempt_count
       FROM social_posts sp JOIN products p ON p.id = sp.product_id LEFT JOIN content_drafts d ON d.id = sp.content_id
       WHERE sp.status IN ('posted','prepared','failed','uncertain','cancelled')
