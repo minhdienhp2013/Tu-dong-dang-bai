@@ -1,4 +1,4 @@
-# Auto Social Minh Điến — v0.3.4
+# Auto Social Minh Điến — v0.3.5
 
 Ứng dụng Windows desktop để quản lý sản phẩm, ảnh, nội dung và đăng Facebook cá nhân trong **một phần mềm duy nhất**.
 
@@ -112,7 +112,7 @@ Kết quả:
 
 ```text
 release/
-  Auto Social Minh Dien Setup 0.3.4.exe
+  Auto Social Minh Dien Setup 0.3.5.exe
 ```
 
 ## Nghiệm thu trước AUTO
@@ -207,3 +207,18 @@ Luồng TEST/AUTO được rút gọn theo đúng thao tác thực tế trên Fa
 App không còn cần tìm selector ô nhập caption trong luồng chính. Drag file ưu tiên dùng Chromium CDP; nếu Edge/Chrome không nhận thì fallback sang DOM DataTransfer cùng thao tác drag/drop.
 
 Các khoảng chờ là cố định để giao diện kịp xử lý và tránh mất ký tự/ảnh; không dùng random delay hay kỹ thuật né kiểm tra.
+
+
+## Sửa kéo-thả ảnh không cần tọa độ v0.3.5
+
+Bản v0.3.4 còn có thể dừng ở lỗi "Không xác định được vùng thả ảnh" vì Facebook không trả bounding box cho phần tử đang focus.
+
+Từ v0.3.5:
+- không còn dùng bounding box;
+- không còn tính X/Y để thả file;
+- tạo DataTransfer chứa ảnh;
+- thả trực tiếp vào phần tử Facebook đang focus;
+- nếu focus không nhận, thả vào chính dialog Tạo bài viết;
+- chỉ tiếp tục sang bước gõ caption khi thấy bằng chứng preview/media mới xuất hiện.
+
+Luồng chính vẫn là: mở composer → thả ảnh → chờ preview → gõ caption bằng keyboard → chờ nút Đăng.
