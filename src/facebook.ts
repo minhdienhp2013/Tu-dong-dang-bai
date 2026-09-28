@@ -181,6 +181,71 @@ async function fillCaption(page: Page, caption: string) {
   );
 }
 
+async function setImagesOnInputs(root: Locator | Page, images: string[], allowGeneric = true): Promise<boolean> {
+  for (const selector of FACEBOOK_SELECTORS.imageFileInputs) {
+    const inputs = root.locator(selector);
+    const count = await inputs.count().catch(() => 0);
+
+    for (let i = 0; i < count; i++) {
+      const input = inputs.nth(i);
+      try {
+        const accept = String(await input.getAttribute('accept').catch(() => '') || '').toLowerCase();
+        const multiple = await input.getAttribute('multiple').catch(() => null);
+
+        // Tránh input rõ ràng chỉ dành cho video/file khác. Input không có accept
+        // vẫn được thử vì Facebook có phiên bản dùng input generic trong composer.
+        if (accept && !/image|\.jpe?g|\.png|\.webp/.test(accept)) continue;
+        if (!accept && !allowGeneric) continue;
+        if (images.length > 1 && multiple === null && count > 1) continue;
+
+        await input.setInputFiles(images, { timeout: 5000 });
+        const fileCount = await input.evaluate(el => (el as HTMLInputElement).files?.length || 0).catch(() => 0);
+        if (fileCount > 0) return true;
+      } catch {
+        // Thử input tiếp theo; Facebook thường giữ nhiều input file ẩn trên trang.
+      }
+    }
+  }
+
+  return false;
+}
+
+async function clickPhotoControl(page: Page, dialog: Locator, images: string[]): Promise<boolean> {
+  const candidates: Locator[] = [];
+
+  for (const selector of FACEBOOK_SELECTORS.photoButtonSelectors) {
+    candidates.push(dialog.locator(selector).first());
+  }
+
+  for (const text of FACEBOOK_SELECTORS.photoTexts) {
+    candidates.push(dialog.getByRole('button', { name: text, exact: false }).first());
+    candidates.push(dialog.getByText(text, { exact: false }).first());
+  }
+
+  for (const candidate of candidates) {
+    if (!await candidate.isVisible().catch(() => false)) continue;
+
+    try {
+      const chooserPromise = page.waitForEvent('filechooser', { timeout: 1800 }).catch(() => null);
+      await candidate.click({ timeout: 4000 });
+      const chooser = await chooserPromise;
+
+      if (chooser) {
+        await chooser.setFiles(images);
+        return true;
+      }
+
+      // Nhiều phiên bản Facebook chỉ tạo input file ẩn sau lần click đầu,
+      // không mở file chooser ngay.
+      return true;
+    } catch {
+      // Thử control tiếp theo.
+    }
+  }
+
+  return false;
+}
+
 async function addPhotos(page: Page, images: string[]) {
   for (const img of images) {
     if (!fs.existsSync(img)) {
@@ -189,40 +254,37 @@ async function addPhotos(page: Page, images: string[]) {
   }
 
   const dialog = await getComposerDialog(page);
-  const inputs = dialog.locator(FACEBOOK_SELECTORS.fileInput);
-  if (await inputs.count()) {
-    try {
-      await inputs.first().setInputFiles(images);
-      return;
-    } catch (error) {
-      throw new FacebookAutomationError(
-        'UPLOAD_ERROR',
-        'Không thể upload ảnh vào Facebook: ' + String((error as any)?.message || error)
-      );
-    }
-  }
 
-  for (const text of FACEBOOK_SELECTORS.photoTexts) {
-    const btn = dialog.getByText(text, { exact: false }).first();
-    if (await btn.isVisible().catch(() => false)) {
-      try {
-        const chooserPromise = page.waitForEvent('filechooser', { timeout: 7000 });
-        await btn.click();
-        const chooser = await chooserPromise;
-        await chooser.setFiles(images);
-        return;
-      } catch (error) {
-        throw new FacebookAutomationError(
-          'UPLOAD_ERROR',
-          'Không thể chọn ảnh để upload: ' + String((error as any)?.message || error)
-        );
-      }
+  // Lớp 1: input file nằm ngay trong composer.
+  if (await setImagesOnInputs(dialog, images)) return;
+
+  // Lớp 2: Facebook đôi khi portal input ra ngoài dialog.
+  if (await setImagesOnInputs(page, images, false)) return;
+
+  // Lớp 3: bấm Ảnh/video để Facebook tạo input/chooser.
+  const deadline = Date.now() + 15_000;
+  let clickedPhotoControl = false;
+
+  while (Date.now() < deadline) {
+    await assertSafeSession(page);
+
+    if (!clickedPhotoControl) {
+      clickedPhotoControl = await clickPhotoControl(page, dialog, images);
     }
+
+    // Sau click, input có thể xuất hiện trong dialog hoặc ở body.
+    if (await setImagesOnInputs(dialog, images)) return;
+    if (await setImagesOnInputs(page, images, false)) return;
+
+    // Nếu lần click đầu chỉ mở vùng "Thêm vào bài viết", cho phép tìm/click
+    // lại một control Ảnh/video mới xuất hiện.
+    clickedPhotoControl = false;
+    await page.waitForTimeout(500);
   }
 
   throw new FacebookAutomationError(
     'FACEBOOK_UI_CHANGED',
-    'Không tìm thấy nút/ô tải ảnh trong hộp tạo bài.'
+    'Đã mở hộp Tạo bài viết nhưng không tìm thấy bộ chọn ảnh sau 15 giây. Facebook có thể vừa thay đổi giao diện tải ảnh.'
   );
 }
 
