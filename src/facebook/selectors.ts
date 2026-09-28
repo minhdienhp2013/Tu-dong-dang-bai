@@ -17,7 +17,21 @@ export const FACEBOOK_SELECTORS = {
     /^Đăng$/i,
     /^Post$/i
   ],
-  editor: '[contenteditable="true"]',
+  editorCandidates: [
+    '[data-lexical-editor="true"]',
+    '[contenteditable="true"][role="textbox"]',
+    '[role="textbox"][contenteditable]:not([contenteditable="false"])',
+    '[aria-placeholder*="Bạn đang nghĩ gì"]',
+    "[aria-placeholder*=\"What's on your mind\"]",
+    '[aria-label*="Bạn đang nghĩ gì"]',
+    "[aria-label*=\"What's on your mind\"]",
+    'div[contenteditable="true"]',
+    '[contenteditable]:not([contenteditable="false"])'
+  ],
+  composerDialogSignals: [
+    'Tạo bài viết',
+    'Create post'
+  ],
   fileInput: 'input[type="file"]',
   dialog: '[role="dialog"]'
 };

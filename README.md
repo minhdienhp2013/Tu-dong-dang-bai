@@ -1,4 +1,4 @@
-# Auto Social Minh Điến — v0.3.1
+# Auto Social Minh Điến — v0.3.2
 
 Ứng dụng Windows desktop để quản lý sản phẩm, ảnh, nội dung và đăng Facebook cá nhân trong **một phần mềm duy nhất**.
 
@@ -112,7 +112,7 @@ Kết quả:
 
 ```text
 release/
-  Auto Social Minh Dien Setup 0.3.1.exe
+  Auto Social Minh Dien Setup 0.3.2.exe
 ```
 
 ## Nghiệm thu trước AUTO
@@ -163,3 +163,15 @@ npm.cmd run start:visible
 ```
 
 Cấu hình **Khởi động ẩn xuống tray** không ngăn launcher thủ công hiển thị cửa sổ.
+
+
+## Sửa vùng nhập nội dung Facebook
+
+Từ v0.3.2, composer Facebook không còn phụ thuộc vào một selector duy nhất.
+
+- Chờ tối đa 15 giây để editor của Facebook dựng xong.
+- Hỗ trợ Lexical editor, `role=textbox`, `contenteditable`, `aria-placeholder` và nhãn tiếng Việt/Anh.
+- Chọn đúng dialog **Tạo bài viết / Create post** khi Facebook có nhiều dialog.
+- Fallback bằng textbox nhìn thấy được trong đúng composer.
+- Nếu `fill()` không hoạt động với Lexical editor, app focus và chèn text bằng keyboard của Playwright.
+- Lỗi đăng Facebook trên UI được rút gọn, không còn chuỗi `Error invoking remote method...` khó đọc.
