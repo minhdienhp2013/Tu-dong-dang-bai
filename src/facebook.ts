@@ -518,11 +518,6 @@ async function waitForDroppedMedia(
 
     const after = await getComposerMediaEvidence(dialog);
     if (hasNewComposerMedia(before, after)) return true;
-
-    // Ở bước này caption CHƯA được nhập. Nếu nút Đăng đã enabled thì
-    // Facebook đã nhận một nội dung có thể đăng; với luồng hiện tại đó chính là ảnh.
-    const postButton = await findPostButton(page).catch(() => null);
-    if (postButton && await postButton.isEnabled().catch(() => false)) return true;
   }
 
   return false;
@@ -547,14 +542,9 @@ async function dragImagesIntoComposer(page: Page, dialog: Locator, images: strin
   await dispatchDropToComposer(page, dialog, images, 'dialog');
   if (await waitForDroppedMedia(page, dialog, before, 8000)) return;
 
-  // Kiểm tra cuối cùng trước khi kết luận thất bại. Caption vẫn chưa được gõ,
-  // nên nút Đăng sáng là bằng chứng đủ mạnh rằng ảnh đã vào composer.
-  const postButton = await findPostButton(page).catch(() => null);
-  if (postButton && await postButton.isEnabled().catch(() => false)) return;
-
   throw new FacebookAutomationError(
     'UPLOAD_ERROR',
-    'Facebook chưa xác nhận ảnh trong composer và nút Đăng vẫn chưa sẵn sàng.'
+    'Facebook chưa xác nhận ảnh trong composer sau thao tác kéo-thả.'
   );
 }
 
@@ -855,19 +845,20 @@ export async function publishToFacebook(
     await clickComposer(page);
     const composer = await getComposerDialog(page);
 
-    // Luồng thao tác đơn giản theo đúng UI Facebook hiện tại:
-    // 1) mở composer, 2) kéo ảnh vào vùng soạn bài, 3) gõ caption bằng keyboard,
-    // 4) chờ nút Đăng sẵn sàng.
+    // Thứ tự thao tác theo yêu cầu thực tế:
+    // 1) mở composer, 2) nhập caption trước, 3) kéo ảnh lên,
+    // 4) chờ ảnh xử lý xong, 5) tìm và bấm nút Đăng.
     await page.waitForTimeout(1200);
+
+    await typeCaptionWithKeyboard(page, composer, caption);
+    await page.waitForTimeout(900);
 
     if (images.length) {
       await dragImagesIntoComposer(page, composer, images);
-      await page.waitForTimeout(1200);
+      await page.waitForTimeout(1400);
     }
 
-    await typeCaptionWithKeyboard(page, composer, caption);
-
-    // Chờ Facebook xử lý upload và chỉ tiếp tục khi nút Đăng thực sự enabled.
+    // Chờ Facebook xử lý ảnh và chỉ tiếp tục khi nút Đăng thực sự enabled.
     const postButton = await waitForPostButtonReady(page, images.length > 0);
     await assertSafeSession(page);
 
