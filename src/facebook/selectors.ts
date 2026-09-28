@@ -22,9 +22,9 @@ export const FACEBOOK_SELECTORS = {
     '[contenteditable="true"][role="textbox"]',
     '[role="textbox"][contenteditable]:not([contenteditable="false"])',
     '[aria-placeholder*="Bạn đang nghĩ gì"]',
-    '[aria-placeholder*="What\\'s on your mind"]',
+    "[aria-placeholder*=\"What's on your mind\"]",
     '[aria-label*="Bạn đang nghĩ gì"]',
-    '[aria-label*="What\\'s on your mind"]',
+    "[aria-label*=\"What's on your mind\"]",
     'div[contenteditable="true"]',
     '[contenteditable]:not([contenteditable="false"])'
   ],
