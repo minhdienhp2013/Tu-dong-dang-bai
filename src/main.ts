@@ -168,8 +168,9 @@ type PostingCandidate = {
   lastPostedAt: string | null;
 };
 
-function usableImages(rows: ProductImageRecord[], reuseAfterDays: number, count: number) {
+function usableImages(rows: ProductImageRecord[], reuseAfterDays: number, count: number, allowReuse = false) {
   const active = rows.filter(image => !!image.active && fs.existsSync(image.file_path));
+  if (allowReuse) return active.slice(0, Math.max(1, count));
   const unused = active.filter(image => Number(image.used_count || 0) === 0);
   if (unused.length) return unused.slice(0, Math.max(1, count));
 
@@ -200,11 +201,11 @@ function getPostingCandidates(): PostingCandidate[] {
     .filter((item): item is PostingCandidate => !!item);
 }
 
-function choosePostingCandidate(candidates: PostingCandidate[], daysBeforeRepeat: number, imageReuseAfterDays: number) {
+function choosePostingCandidate(candidates: PostingCandidate[], daysBeforeRepeat: number, imageReuseAfterDays: number, allowImageReuse = false) {
   const cutoff = Date.now() - daysBeforeRepeat * 86400000;
   const eligible = candidates.filter(item => {
     if (item.lastPostedAt && new Date(item.lastPostedAt).getTime() >= cutoff) return false;
-    return usableImages(item.images, imageReuseAfterDays, 1).length > 0;
+    return usableImages(item.images, imageReuseAfterDays, 1, allowImageReuse).length > 0;
   });
 
   eligible.sort((a, b) => {
@@ -233,7 +234,7 @@ async function makeDraft(productId?: number): Promise<DraftPost> {
   const cfg = configStore.load();
   const candidates = getPostingCandidates();
   const preferred = productId ? candidates.find(item => item.product.id === productId) || null : null;
-  const selected = preferred || choosePostingCandidate(candidates, cfg.daysBeforeRepeatProduct, cfg.imageReuseAfterDays);
+  const selected = preferred || choosePostingCandidate(candidates, cfg.daysBeforeRepeatProduct, cfg.imageReuseAfterDays, cfg.allowImageReuse);
 
   if (!selected) {
     notify('Auto Social Minh Điến', '📦 Chưa có sản phẩm đủ điều kiện để đăng.');
@@ -242,7 +243,7 @@ async function makeDraft(productId?: number): Promise<DraftPost> {
     );
   }
 
-  const selectedImages = usableImages(selected.images, cfg.imageReuseAfterDays, cfg.imagesPerPost);
+  const selectedImages = usableImages(selected.images, cfg.imageReuseAfterDays, cfg.imagesPerPost, cfg.allowImageReuse);
   if (!selectedImages.length) {
     throw new Error('Ảnh của sản phẩm chưa đủ điều kiện dùng lại theo cài đặt hiện tại.');
   }
@@ -469,20 +470,22 @@ async function publishManagedPost(postId: number) {
     throw new Error('Bài này đã hoàn tất, đã hủy hoặc cần kiểm tra thủ công.');
   }
 
-  const imageIds = JSON.parse(post.image_ids_json || '[]') as number[];
-  const images = db.resolveImagePaths(imageIds).filter(i => i.active);
-  if (!images.length) throw new Error('Bài đăng chưa có ảnh hoạt động.');
-  const text = [post.title?.trim(), post.caption?.trim(), post.hashtags?.trim()].filter(Boolean).join('\n\n');
-  if (!text.trim()) throw new Error('Bài đăng chưa có nội dung.');
-
   const cfg = configStore.load();
   const mode = post.mode || cfg.runMode;
   managedPosting.add(postId);
-  db.updateSocialPostStatus(postId, 'posting');
-  db.addPostAttempt(postId, 'posting', 'Bắt đầu đăng Facebook');
-  logger.write('MANAGED_POST_START', { postId, product: post.product_name, mode });
 
   try {
+    // Lỗi dữ liệu trước khi mở Facebook cũng phải được lưu vào trạng thái bài.
+    // Nếu không, bài quá giờ sẽ đứng mãi ở "Đã lên lịch".
+    const imageIds = JSON.parse(post.image_ids_json || '[]') as number[];
+    const images = db.resolveImagePaths(imageIds).filter(i => i.active);
+    if (!images.length) throw new Error('Bài đăng chưa có ảnh hoạt động.');
+    const text = [post.title?.trim(), post.caption?.trim(), post.hashtags?.trim()].filter(Boolean).join('\n\n');
+    if (!text.trim()) throw new Error('Bài đăng chưa có nội dung.');
+
+    db.updateSocialPostStatus(postId, 'posting');
+    db.addPostAttempt(postId, 'posting', 'Bắt đầu đăng Facebook');
+    logger.write('MANAGED_POST_START', { postId, product: post.product_name, mode });
     const result = await publishToFacebook(cfg.browserProfileDir, text, images.map(i => i.file_path), mode);
     if (!result.posted) {
       throw new FacebookAutomationError(
@@ -732,7 +735,7 @@ function registerIpc() {
   ipcMain.handle('dashboard:get', async () => {
     const cfg = configStore.load();
     const candidates = getPostingCandidates();
-    const selected = choosePostingCandidate(candidates, cfg.daysBeforeRepeatProduct, cfg.imageReuseAfterDays);
+    const selected = choosePostingCandidate(candidates, cfg.daysBeforeRepeatProduct, cfg.imageReuseAfterDays, cfg.allowImageReuse);
     const inv = db.catalogInventoryStats();
     const next = nextScheduleInfo();
     const summary = db.dashboardSummary(next?.at.toISOString() || null, selected?.product.name || null);
@@ -764,9 +767,13 @@ if (gotSingleInstanceLock) {
     createWindow(showArg || (!hiddenArg && !configStore.load().startMinimized));
 
     scheduler.start(async () => {
-      await processNetworkRetries();
-      await processManagedPosts();
-      await processConfiguredSlots();
+      for (const task of [processNetworkRetries, processManagedPosts, processConfiguredSlots]) {
+        try {
+          await task();
+        } catch (error) {
+          logger.write('SCHEDULER_TICK_ERROR', { task: task.name, message: String((error as any)?.message || error) });
+        }
+      }
     }, 15_000);
   });
 }

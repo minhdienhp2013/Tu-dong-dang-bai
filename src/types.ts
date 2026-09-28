@@ -22,6 +22,7 @@ export type AppConfig = {
   schedulerPaused: boolean;
   daysBeforeRepeatProduct: number;
   imageReuseAfterDays: number;
+  allowImageReuse: boolean;
   imagesPerPost: number;
   browserProfileDir: string;
   runMode: RunMode;

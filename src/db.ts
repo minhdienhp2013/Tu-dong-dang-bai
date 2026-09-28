@@ -456,8 +456,12 @@ export class AppDb {
   listScheduledPosts(): SocialPostRecord[] {
     return this.db.prepare(`SELECT sp.*, p.name AS product_name, d.title, d.caption, d.hashtags
       FROM social_posts sp JOIN products p ON p.id = sp.product_id LEFT JOIN content_drafts d ON d.id = sp.content_id
-      WHERE sp.status IN ('draft','pending','preparing','scheduled','posting','prepared','failed','uncertain')
-      ORDER BY CASE WHEN sp.scheduled_at IS NULL THEN 1 ELSE 0 END, sp.scheduled_at, sp.id DESC`).all() as SocialPostRecord[];
+      WHERE sp.status IN ('draft','pending','preparing','scheduled','posting','prepared','failed','uncertain','posted')
+      ORDER BY CASE WHEN sp.status = 'posted' THEN 1 ELSE 0 END,
+               CASE WHEN sp.scheduled_at IS NULL THEN 1 ELSE 0 END,
+               CASE WHEN sp.status = 'posted' THEN sp.scheduled_at END DESC,
+               CASE WHEN sp.status <> 'posted' THEN sp.scheduled_at END ASC,
+               sp.id DESC LIMIT 100`).all() as SocialPostRecord[];
   }
 
   getDueScheduledPosts(now: string): SocialPostRecord[] {

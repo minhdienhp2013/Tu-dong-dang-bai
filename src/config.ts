@@ -34,6 +34,7 @@ function defaultConfig(): AppConfig {
     schedulerPaused: false,
     daysBeforeRepeatProduct: 7,
     imageReuseAfterDays: 30,
+    allowImageReuse: false,
     imagesPerPost: 4,
     browserProfileDir: path.join(userData, 'facebook-browser-profile'),
     runMode: 'test',
@@ -55,6 +56,7 @@ function sanitizeConfig(raw: Partial<AppConfig>, base: AppConfig): AppConfig {
     postingTimes: Array.isArray(raw.postingTimes) ? raw.postingTimes.filter(Boolean) : base.postingTimes,
     runMode: raw.runMode === 'auto' ? 'auto' : 'test',
     randomStyleEnabled: raw.randomStyleEnabled === true,
+    allowImageReuse: raw.allowImageReuse === true,
     imagesPerPost: Math.max(1, Math.min(10, Number(raw.imagesPerPost ?? base.imagesPerPost))),
     daysBeforeRepeatProduct: Math.max(0, Number(raw.daysBeforeRepeatProduct ?? base.daysBeforeRepeatProduct)),
     imageReuseAfterDays: Math.max(0, Number(raw.imageReuseAfterDays ?? base.imageReuseAfterDays))
