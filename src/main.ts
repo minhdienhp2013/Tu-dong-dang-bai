@@ -342,6 +342,7 @@ async function makeDraft(productId?: number): Promise<DraftPost> {
   const caption = [
     selected.content.title?.trim(),
     selected.content.caption?.trim(),
+    selected.content.footer_text?.trim(),
     selected.content.hashtags?.trim()
   ].filter(Boolean).join('\n\n');
 
@@ -571,7 +572,7 @@ async function publishManagedPost(postId: number) {
     const imageIds = JSON.parse(post.image_ids_json || '[]') as number[];
     const images = db.resolveImagePaths(imageIds).filter(i => i.active);
     if (!images.length) throw new Error('Bài đăng chưa có ảnh hoạt động.');
-    const text = [post.title?.trim(), post.caption?.trim(), post.hashtags?.trim()].filter(Boolean).join('\n\n');
+    const text = [post.title?.trim(), post.caption?.trim(), post.footer_text?.trim(), post.hashtags?.trim()].filter(Boolean).join('\n\n');
     if (!text.trim()) throw new Error('Bài đăng chưa có nội dung.');
 
     db.updateSocialPostStatus(postId, 'posting');
@@ -786,9 +787,9 @@ function registerIpc() {
   });
   ipcMain.handle('content:create-manual', (_e, productId: number, data) => db.createContent(Number(productId), {
     title: String(data?.title || ''), caption: String(data?.caption || ''), hashtags: String(data?.hashtags || '')
-  }, 'manual'));
+  }, 'manual', undefined, null, String(data?.footerText || '')));
   ipcMain.handle('content:update', (_e, id: number, data) => db.updateContent(Number(id), {
-    title: data?.title, caption: data?.caption, hashtags: data?.hashtags, status: data?.status
+    title: data?.title, caption: data?.caption, footer_text: data?.footerText, hashtags: data?.hashtags, status: data?.status
   }));
   ipcMain.handle('content:delete', (_e, id: number) => { db.deleteContent(Number(id)); return { ok: true }; });
 
