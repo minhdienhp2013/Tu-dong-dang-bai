@@ -69,32 +69,116 @@ async function clickComposer(page: Page) {
 }
 
 async function getComposerDialog(page: Page) {
-  const deadline = Date.now() + 10_000;
+  const deadline = Date.now() + 15_000;
+
   while (Date.now() < deadline) {
-    const dialog = page.locator(FACEBOOK_SELECTORS.dialog).last();
-    if (await dialog.isVisible().catch(() => false)) return dialog;
+    const dialogs = page.locator(FACEBOOK_SELECTORS.dialog);
+    const count = await dialogs.count();
+
+    // Facebook đôi khi có nhiều dialog cùng lúc. Ưu tiên dialog có tiêu đề
+    // "Tạo bài viết / Create post" hoặc có editor/file input của composer.
+    for (let i = count - 1; i >= 0; i--) {
+      const dialog = dialogs.nth(i);
+      if (!await dialog.isVisible().catch(() => false)) continue;
+
+      const text = normalizeVisibleText(await dialog.innerText().catch(() => ''));
+      const hasComposerTitle = FACEBOOK_SELECTORS.composerDialogSignals
+        .some(signal => text.includes(normalizeVisibleText(signal)));
+
+      let hasEditor = false;
+      for (const selector of FACEBOOK_SELECTORS.editorCandidates) {
+        if (await dialog.locator(selector).first().isVisible().catch(() => false)) {
+          hasEditor = true;
+          break;
+        }
+      }
+
+      const hasFileInput = await dialog.locator(FACEBOOK_SELECTORS.fileInput).count().catch(() => 0) > 0;
+      if (hasComposerTitle || hasEditor || hasFileInput) return dialog;
+    }
+
     await page.waitForTimeout(300);
   }
+
   throw new FacebookAutomationError('FACEBOOK_UI_CHANGED', 'Không tìm thấy hộp tạo bài viết.');
+}
+
+async function fillEditor(locator: Locator, page: Page, caption: string) {
+  await locator.scrollIntoViewIfNeeded().catch(() => undefined);
+  await locator.click({ timeout: 3000 }).catch(() => undefined);
+
+  try {
+    await locator.fill(caption, { timeout: 5000 });
+  } catch {
+    // Một số bản Facebook dùng Lexical editor: locator.fill có thể không nhận.
+    // Khi đó focus editor rồi chèn text bằng bàn phím thật của Playwright.
+    await locator.focus().catch(() => undefined);
+    await page.keyboard.press('Control+A').catch(() => undefined);
+    await page.keyboard.insertText(caption);
+  }
+
+  const text = (await locator.innerText().catch(() => '')).trim();
+  if (text || !caption.trim()) return true;
+
+  // Với một số contenteditable, innerText cập nhật trễ.
+  await page.waitForTimeout(300);
+  return (await locator.innerText().catch(() => '')).trim().length > 0;
+}
+
+async function findVisibleComposerEditor(dialog: Locator): Promise<Locator | null> {
+  for (const selector of FACEBOOK_SELECTORS.editorCandidates) {
+    const candidates = dialog.locator(selector);
+    const count = await candidates.count();
+
+    for (let i = 0; i < count; i++) {
+      const candidate = candidates.nth(i);
+      if (!await candidate.isVisible().catch(() => false)) continue;
+
+      const tag = await candidate.evaluate(el => el.tagName.toLowerCase()).catch(() => '');
+      const role = await candidate.getAttribute('role').catch(() => null);
+      const editable = await candidate.getAttribute('contenteditable').catch(() => null);
+
+      // Tránh chọn nhầm input tìm kiếm/nút khác trong dialog.
+      if (tag === 'textarea' || tag === 'input' || role === 'textbox' || editable === 'true' || editable === 'plaintext-only') {
+        return candidate;
+      }
+    }
+  }
+
+  // Fallback cuối: role=textbox trong đúng composer dialog.
+  const textboxes = dialog.getByRole('textbox');
+  const count = await textboxes.count();
+  for (let i = 0; i < count; i++) {
+    const candidate = textboxes.nth(i);
+    if (!await candidate.isVisible().catch(() => false)) continue;
+    const tag = await candidate.evaluate(el => el.tagName.toLowerCase()).catch(() => '');
+    const editable = await candidate.getAttribute('contenteditable').catch(() => null);
+    if (tag !== 'input' || editable === 'true' || editable === 'plaintext-only') return candidate;
+  }
+
+  return null;
 }
 
 async function fillCaption(page: Page, caption: string) {
   const dialog = await getComposerDialog(page);
-  const editors = dialog.locator(FACEBOOK_SELECTORS.editor);
-  const count = await editors.count();
-  for (let i = 0; i < count; i++) {
-    const ed = editors.nth(i);
-    if (await ed.isVisible().catch(() => false)) {
-      await ed.click();
-      try {
-        await ed.fill(caption);
-      } catch {
-        await page.keyboard.insertText(caption);
-      }
-      return;
+  const deadline = Date.now() + 15_000;
+
+  while (Date.now() < deadline) {
+    await assertSafeSession(page);
+
+    const editor = await findVisibleComposerEditor(dialog);
+    if (editor) {
+      const ok = await fillEditor(editor, page, caption).catch(() => false);
+      if (ok) return;
     }
+
+    await page.waitForTimeout(350);
   }
-  throw new FacebookAutomationError('FACEBOOK_UI_CHANGED', 'Không tìm thấy ô nhập nội dung bài viết.');
+
+  throw new FacebookAutomationError(
+    'FACEBOOK_UI_CHANGED',
+    'Hộp Tạo bài viết đã mở nhưng không tìm thấy vùng nhập nội dung sau 15 giây. Facebook có thể vừa thay đổi giao diện.'
+  );
 }
 
 async function addPhotos(page: Page, images: string[]) {
