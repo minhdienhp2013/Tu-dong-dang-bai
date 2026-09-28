@@ -1,4 +1,4 @@
-# Auto Social Minh Điến — v0.3.5
+# Auto Social Minh Điến — v0.3.6
 
 Ứng dụng Windows desktop để quản lý sản phẩm, ảnh, nội dung và đăng Facebook cá nhân trong **một phần mềm duy nhất**.
 
@@ -112,7 +112,7 @@ Kết quả:
 
 ```text
 release/
-  Auto Social Minh Dien Setup 0.3.5.exe
+  Auto Social Minh Dien Setup 0.3.6.exe
 ```
 
 ## Nghiệm thu trước AUTO
@@ -222,3 +222,21 @@ Từ v0.3.5:
 - chỉ tiếp tục sang bước gõ caption khi thấy bằng chứng preview/media mới xuất hiện.
 
 Luồng chính vẫn là: mở composer → thả ảnh → chờ preview → gõ caption bằng keyboard → chờ nút Đăng.
+
+
+## Bấm nút Đăng Facebook v0.3.6
+
+Facebook hiện dùng nút dạng:
+
+```html
+<div role="button" aria-label="Đăng" tabindex="0">...</div>
+```
+
+Từ v0.3.6:
+- ưu tiên selector `[role="button"][aria-label="Đăng"]`;
+- hỗ trợ tiếng Anh `aria-label="Post"`;
+- không phụ thuộc các class `x...` của Facebook vì chúng thay đổi liên tục;
+- chỉ coi nút sẵn sàng khi đang hiển thị và không có `aria-disabled="true"`;
+- AUTO gửi đúng một click vào nút Đăng;
+- từ lúc bắt đầu click, mọi lỗi không rõ được ghi `POST_UNCERTAIN` để không tự retry và tránh bài trùng;
+- TEST vẫn cố ý dừng trước nút Đăng.
