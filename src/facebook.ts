@@ -568,11 +568,66 @@ async function typeCaptionWithKeyboard(page: Page, dialog: Locator, caption: str
 
 async function findPostButton(page: Page): Promise<Locator | null> {
   const dialog = await getComposerDialog(page);
-  for (const name of FACEBOOK_SELECTORS.postButtonNames) {
-    const btn = dialog.getByRole('button', { name }).first();
-    if (await btn.isVisible().catch(() => false)) return btn;
+
+  // Ưu tiên đúng cấu trúc Facebook hiện tại:
+  // <div role="button" aria-label="Đăng" tabindex="0">...</div>
+  // Không dùng class x... vì Facebook thay class liên tục.
+  for (const selector of FACEBOOK_SELECTORS.postButtonSelectors) {
+    const matches = dialog.locator(selector);
+    const count = await matches.count();
+
+    for (let i = count - 1; i >= 0; i--) {
+      const btn = matches.nth(i);
+      if (!await btn.isVisible().catch(() => false)) continue;
+      const ariaDisabled = await btn.getAttribute('aria-disabled').catch(() => null);
+      if (ariaDisabled !== 'true') return btn;
+    }
   }
+
+  // Fallback accessibility role/name.
+  for (const name of FACEBOOK_SELECTORS.postButtonNames) {
+    const matches = dialog.getByRole('button', { name });
+    const count = await matches.count();
+
+    for (let i = count - 1; i >= 0; i--) {
+      const btn = matches.nth(i);
+      if (!await btn.isVisible().catch(() => false)) continue;
+      const ariaDisabled = await btn.getAttribute('aria-disabled').catch(() => null);
+      if (ariaDisabled !== 'true') return btn;
+    }
+  }
+
   return null;
+}
+
+async function clickReadyPostButton(page: Page, button: Locator) {
+  await button.scrollIntoViewIfNeeded().catch(() => undefined);
+  await page.waitForTimeout(500);
+
+  // Click thường trước. Nếu Playwright không thể actionability-click, mới fallback
+  // sang focus + Enter hoặc force click. Không click lặp lại sau khi click thường
+  // đã thành công để tránh đăng hai lần.
+  try {
+    await button.click({ timeout: 7000 });
+    return;
+  } catch (firstError) {
+    try {
+      await button.focus({ timeout: 2500 });
+      await page.keyboard.press('Enter');
+      return;
+    } catch {
+      try {
+        await button.click({ timeout: 3500, force: true });
+        return;
+      } catch (finalError) {
+        throw new FacebookAutomationError(
+          'FACEBOOK_UI_CHANGED',
+          'Đã tìm thấy nút Đăng nhưng không thể bấm: ' +
+          String((finalError as any)?.message || finalError || firstError)
+        );
+      }
+    }
+  }
 }
 
 async function waitForPostButtonReady(page: Page, hasImages: boolean): Promise<Locator> {
@@ -812,7 +867,7 @@ export async function publishToFacebook(
       };
     }
 
-    await postButton.click();
+    await clickReadyPostButton(page, postButton);
     postClicked = true;
 
     try {
