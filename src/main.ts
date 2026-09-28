@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import {
   app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, Tray
 } from 'electron';
@@ -159,6 +159,97 @@ function migrateLegacyProductImages() {
     }
   }
   return migrated;
+}
+
+function imageHash(file: string) {
+  return createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+}
+
+async function exportCatalog() {
+  const selected = await dialog.showOpenDialog(win!, { title: 'Chọn nơi lưu bản sao dữ liệu', properties: ['openDirectory', 'createDirectory'] });
+  if (selected.canceled || !selected.filePaths[0]) return null;
+  const folder = path.join(selected.filePaths[0], `Auto-Social-Minh-Dien-${new Date().toISOString().replace(/[:.]/g, '-')}`);
+  fs.mkdirSync(folder);
+  try {
+    const categories = db.listCategories();
+    const products = db.listProducts();
+    const images: Array<{ id: number; product_id: number; file: string; note: string; active: number }> = [];
+    fs.mkdirSync(path.join(folder, 'images'));
+    for (const product of products) {
+      for (const image of db.listImages(product.id)) {
+        if (!fs.existsSync(image.file_path)) throw new Error(`Thiếu ảnh của sản phẩm ${product.name}: ${image.file_path}`);
+        const name = randomUUID() + path.extname(image.file_path).toLowerCase();
+        fs.copyFileSync(image.file_path, path.join(folder, 'images', name));
+        images.push({ id: image.id, product_id: product.id, file: name, note: image.note, active: image.active });
+      }
+    }
+    const { deepseekApiKey: _secret, browserProfileDir: _profile, ...settings } = configStore.load();
+    fs.writeFileSync(path.join(folder, 'catalog.json'), JSON.stringify({ format: 'auto-social-catalog', version: 2,
+      createdAt: new Date().toISOString(), categories, products, images, styles: db.listStyles(),
+      contents: db.listContents(), schedules: db.listPendingSchedulesForBackup(), settings }, null, 2));
+    return { folder, categories: categories.length, products: products.length, images: images.length };
+  } catch (error) {
+    fs.rmSync(folder, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+async function importCatalog() {
+  const selected = await dialog.showOpenDialog(win!, { title: 'Chọn thư mục sao lưu Auto Social', properties: ['openDirectory'] });
+  if (selected.canceled || !selected.filePaths[0]) return null;
+  const folder = selected.filePaths[0];
+  const manifest = path.join(folder, 'catalog.json');
+  if (!fs.existsSync(manifest) || fs.statSync(manifest).size > 10_000_000) throw new Error('Thư mục không có catalog.json hợp lệ.');
+  const data = JSON.parse(fs.readFileSync(manifest, 'utf8'));
+  if (data.format !== 'auto-social-catalog' || data.version !== 2 ||
+      !Array.isArray(data.categories) || !Array.isArray(data.products) || !Array.isArray(data.images) ||
+      !Array.isArray(data.styles) || !Array.isArray(data.contents) || !Array.isArray(data.schedules) ||
+      !data.settings || typeof data.settings !== 'object') {
+    throw new Error('Định dạng bản sao lưu không được hỗ trợ.');
+  }
+  if ([data.categories, data.products, data.images, data.styles, data.contents, data.schedules].some((rows: any[]) => rows.length > 100000)) throw new Error('Bản sao lưu quá lớn.');
+  const imageRoot = fs.realpathSync(path.join(folder, 'images'));
+  for (const category of data.categories) {
+    if (!Number.isInteger(category.id) || !String(category.name || '').trim() ||
+      (category.parent_id != null && !Number.isInteger(category.parent_id))) throw new Error('Danh mục sao lưu không hợp lệ.');
+  }
+  for (const product of data.products) {
+    if (!Number.isInteger(product.id) || !String(product.name || '').trim() ||
+      (product.category_id != null && !Number.isInteger(product.category_id))) throw new Error('Sản phẩm sao lưu không hợp lệ.');
+  }
+  for (const image of data.images) {
+    if (!Number.isInteger(image.id) || !Number.isInteger(image.product_id) || typeof image.file !== 'string' ||
+      !/^[a-f0-9-]{36}\.(jpg|jpeg|png|webp)$/i.test(image.file) ||
+      !fs.statSync(path.join(imageRoot, image.file)).isFile() ||
+      path.dirname(fs.realpathSync(path.join(imageRoot, image.file))) !== imageRoot) throw new Error('Ảnh sao lưu không hợp lệ.');
+  }
+  const copied: string[] = [];
+  const hashes = new Map<string, Set<string>>();
+  try {
+    const counts = db.importCatalog(data, (productId, file, existing) => {
+      const source = path.join(imageRoot, file);
+      const hash = imageHash(source);
+      const key = String(productId);
+      if (!hashes.has(key)) hashes.set(key, new Set(existing.filter(fs.existsSync).map(imageHash)));
+      if (hashes.get(key)!.has(hash)) return existing.find(p => fs.existsSync(p) && imageHash(p) === hash)!;
+      const destination = copyImageIntoLibrary(productId, source);
+      copied.push(destination);
+      hashes.get(key)!.add(hash);
+      return destination;
+    });
+    const { deepseekApiKey: _secret, deepseekApiKeyEncrypted: _encrypted, browserProfileDir: _profile, ...settings } = data.settings;
+    const selectedStyle = data.styles.find((style: any) => style.id === settings.defaultStyleId);
+    const restoredStyle = selectedStyle && db.listStyles().find(style => style.name === selectedStyle.name);
+    if (restoredStyle) db.setDefaultStyle(restoredStyle.id);
+    configStore.save({ ...settings, defaultStyleId: restoredStyle?.id || null, schedulerPaused: true });
+    applyWindowsStartup();
+    refreshTrayMenu();
+    logger.write('CATALOG_IMPORTED', counts);
+    return counts;
+  } catch (error) {
+    for (const file of copied) fs.rmSync(file, { force: true });
+    throw error;
+  }
 }
 
 type PostingCandidate = {
@@ -594,6 +685,8 @@ function nextScheduleInfo() {
 
 function registerIpc() {
   ipcMain.handle('app:version', () => app.getVersion());
+  ipcMain.handle('data:backup', () => exportCatalog());
+  ipcMain.handle('data:import', () => importCatalog());
   ipcMain.handle('config:get', () => {
     const cfg = configStore.load();
     return { ...cfg, deepseekApiKey: '', hasDeepseekApiKey: !!cfg.deepseekApiKey };
