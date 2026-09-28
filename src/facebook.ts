@@ -437,34 +437,71 @@ async function addPhotos(page: Page, images: string[]) {
   return;
 }
 
-async function composerDropPoint(page: Page, dialog: Locator) {
-  // Sau khi Facebook mở composer, editor thường đang được focus sẵn.
-  // Ưu tiên chính phần tử đang focus, không dò selector ô nhập.
-  const focused = dialog.locator(':focus').first();
-  let box = await focused.boundingBox().catch(() => null);
+async function dispatchDropToComposer(
+  page: Page,
+  dialog: Locator,
+  images: string[],
+  targetMode: 'focused' | 'dialog'
+) {
+  const payload = images.map(filePath => ({
+    name: path.basename(filePath),
+    type: imageMimeType(filePath),
+    base64: fs.readFileSync(filePath).toString('base64')
+  }));
 
-  // Nếu focus không có bounding box, dùng chính vùng "Bạn đang nghĩ gì?".
-  if (!box) {
-    for (const text of FACEBOOK_SELECTORS.composerTexts) {
-      const hint = dialog.getByText(text, { exact: false }).first();
-      box = await hint.boundingBox().catch(() => null);
-      if (box) break;
+  return dialog.evaluate((dialogElement, arg) => {
+    const transfer = new DataTransfer();
+
+    for (const item of arg.files) {
+      const binary = atob(item.base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+
+      transfer.items.add(new File([bytes], item.name, {
+        type: item.type,
+        lastModified: Date.now()
+      }));
     }
+
+    const active = document.activeElement;
+    const target = arg.targetMode === 'focused' && active && dialogElement.contains(active)
+      ? active
+      : dialogElement;
+
+    for (const type of ['dragenter', 'dragover', 'drop']) {
+      target.dispatchEvent(new DragEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer: transfer
+      }));
+    }
+
+    return {
+      tagName: (target as HTMLElement).tagName || '',
+      role: (target as HTMLElement).getAttribute?.('role') || '',
+      contentEditable: (target as HTMLElement).getAttribute?.('contenteditable') || ''
+    };
+  }, { files: payload, targetMode });
+}
+
+async function waitForDroppedMedia(
+  page: Page,
+  dialog: Locator,
+  before: ComposerMediaEvidence,
+  timeoutMs: number
+) {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    await assertSafeSession(page);
+    await page.waitForTimeout(500);
+    const after = await getComposerMediaEvidence(dialog);
+    if (hasNewComposerMedia(before, after)) return true;
   }
 
-  // Fallback cuối cùng: thả vào vùng giữa của dialog composer.
-  if (!box) box = await dialog.boundingBox().catch(() => null);
-  if (!box) {
-    throw new FacebookAutomationError(
-      'FACEBOOK_UI_CHANGED',
-      'Không xác định được vùng thả ảnh trong hộp Tạo bài viết.'
-    );
-  }
-
-  return {
-    x: box.x + Math.max(12, Math.min(box.width * 0.5, box.width - 12)),
-    y: box.y + Math.max(12, Math.min(box.height * 0.5, box.height - 12))
-  };
+  return false;
 }
 
 async function dragImagesIntoComposer(page: Page, dialog: Locator, images: string[]) {
@@ -474,56 +511,21 @@ async function dragImagesIntoComposer(page: Page, dialog: Locator, images: strin
     }
   }
 
-  const before = await getComposerMediaEvidence(dialog);
-  const point = await composerDropPoint(page, dialog);
-  const cdp = await page.context().newCDPSession(page);
+  // Không dùng boundingBox/tọa độ nữa. Facebook vừa mở composer thường đã
+  // đặt focus đúng vùng viết bài, nên thả file trực tiếp vào activeElement.
+  let before = await getComposerMediaEvidence(dialog);
+  await dispatchDropToComposer(page, dialog, images, 'focused');
+  if (await waitForDroppedMedia(page, dialog, before, 7000)) return;
 
-  try {
-    const data = {
-      items: [],
-      files: images,
-      dragOperationsMask: 1
-    };
-
-    // Kéo-thả thật ở tầng Chromium. Các khoảng chờ cố định để Facebook kịp
-    // chuyển trạng thái UI; không dùng random/humanization.
-    await cdp.send('Input.dispatchDragEvent', {
-      type: 'dragEnter', x: point.x, y: point.y, data
-    });
-    await page.waitForTimeout(450);
-
-    await cdp.send('Input.dispatchDragEvent', {
-      type: 'dragOver', x: point.x, y: point.y, data
-    });
-    await page.waitForTimeout(450);
-
-    await cdp.send('Input.dispatchDragEvent', {
-      type: 'drop', x: point.x, y: point.y, data
-    });
-  } catch {
-    // Một số Chromium/Edge có thể không nhận file drag qua CDP.
-    // Khi đó thử lại bằng DataTransfer trong DOM nhưng vẫn giữ cùng thao tác kéo-thả.
-    const ok = await dispatchImagesToComposer(page, dialog, images, 'drop');
-    if (ok) return;
-  } finally {
-    await cdp.detach().catch(() => undefined);
-  }
-
-  // Chờ preview ảnh xuất hiện trước khi gõ chữ.
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    await assertSafeSession(page);
-    await page.waitForTimeout(500);
-    const after = await getComposerMediaEvidence(dialog);
-    if (hasNewComposerMedia(before, after)) return;
-  }
-
-  // Fallback cùng cơ chế drag/drop DOM, không chuyển sang săn input file.
-  if (await dispatchImagesToComposer(page, dialog, images, 'drop')) return;
+  // Nếu focus không nằm trong editor, thả vào chính dialog để sự kiện bubble
+  // qua cây composer. Vẫn là thao tác drag/drop, không tìm input file.
+  before = await getComposerMediaEvidence(dialog);
+  await dispatchDropToComposer(page, dialog, images, 'dialog');
+  if (await waitForDroppedMedia(page, dialog, before, 8000)) return;
 
   throw new FacebookAutomationError(
     'UPLOAD_ERROR',
-    'Facebook chưa nhận ảnh sau thao tác kéo-thả. Hãy kiểm tra giao diện composer hiện tại.'
+    'Facebook chưa nhận ảnh sau khi thả trực tiếp vào hộp Tạo bài viết.'
   );
 }
 
