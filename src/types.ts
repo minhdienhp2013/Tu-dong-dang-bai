@@ -74,6 +74,7 @@ export type ContentDraftRecord = {
   product_name?: string;
   title: string;
   caption: string;
+  footer_text: string;
   hashtags: string;
   source: 'ai' | 'manual';
   status: 'draft' | 'approved' | 'used';
@@ -103,6 +104,7 @@ export type SocialPostRecord = {
   updated_at: string;
   title?: string;
   caption?: string;
+  footer_text?: string;
   hashtags?: string;
 };
 
