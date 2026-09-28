@@ -261,6 +261,7 @@ type ComposerMediaEvidence = {
   blobImageCount: number;
   backgroundImageCount: number;
   removeControlCount: number;
+  mediaSignatures: string[];
 };
 
 async function getComposerMediaEvidence(dialog: Locator): Promise<ComposerMediaEvidence> {
@@ -268,7 +269,8 @@ async function getComposerMediaEvidence(dialog: Locator): Promise<ComposerMediaE
     imageCount,
     blobImageCount,
     backgroundImageCount,
-    removeControlCount
+    removeControlCount,
+    mediaSignatures
   ] = await Promise.all([
     dialog.locator('img').count().catch(() => 0),
     dialog.locator('img[src^="blob:"], img[src^="data:image/"]').count().catch(() => 0),
@@ -282,18 +284,34 @@ async function getComposerMediaEvidence(dialog: Locator): Promise<ComposerMediaE
         '[aria-label*="Chỉnh sửa ảnh"]',
         '[aria-label*="Edit photo"]'
       ].join(',')
-    ).count().catch(() => 0)
+    ).count().catch(() => 0),
+    dialog.locator('img[src], [style*="background-image"], [role="img"]').evaluateAll(elements => {
+      return elements.map((element: Element) => {
+        const html = element as HTMLElement;
+        if (element.tagName.toLowerCase() === 'img') {
+          const img = element as HTMLImageElement;
+          return 'img:' + (img.currentSrc || img.src || '') + '|alt:' + (img.alt || '');
+        }
+        const background = html.style?.backgroundImage || '';
+        const aria = html.getAttribute?.('aria-label') || '';
+        return 'node:' + background + '|aria:' + aria;
+      }).filter(Boolean);
+    }).catch(() => [] as string[])
   ]);
 
-  return { imageCount, blobImageCount, backgroundImageCount, removeControlCount };
+  return { imageCount, blobImageCount, backgroundImageCount, removeControlCount, mediaSignatures };
 }
 
 function hasNewComposerMedia(before: ComposerMediaEvidence, after: ComposerMediaEvidence) {
+  const beforeSignatures = new Set(before.mediaSignatures);
+  const hasNewSignature = after.mediaSignatures.some(signature => !beforeSignatures.has(signature));
+
   return (
     after.imageCount > before.imageCount ||
     after.blobImageCount > before.blobImageCount ||
     after.backgroundImageCount > before.backgroundImageCount ||
-    after.removeControlCount > before.removeControlCount
+    after.removeControlCount > before.removeControlCount ||
+    hasNewSignature
   );
 }
 
@@ -497,8 +515,14 @@ async function waitForDroppedMedia(
   while (Date.now() < deadline) {
     await assertSafeSession(page);
     await page.waitForTimeout(500);
+
     const after = await getComposerMediaEvidence(dialog);
     if (hasNewComposerMedia(before, after)) return true;
+
+    // Ở bước này caption CHƯA được nhập. Nếu nút Đăng đã enabled thì
+    // Facebook đã nhận một nội dung có thể đăng; với luồng hiện tại đó chính là ảnh.
+    const postButton = await findPostButton(page).catch(() => null);
+    if (postButton && await postButton.isEnabled().catch(() => false)) return true;
   }
 
   return false;
@@ -523,9 +547,14 @@ async function dragImagesIntoComposer(page: Page, dialog: Locator, images: strin
   await dispatchDropToComposer(page, dialog, images, 'dialog');
   if (await waitForDroppedMedia(page, dialog, before, 8000)) return;
 
+  // Kiểm tra cuối cùng trước khi kết luận thất bại. Caption vẫn chưa được gõ,
+  // nên nút Đăng sáng là bằng chứng đủ mạnh rằng ảnh đã vào composer.
+  const postButton = await findPostButton(page).catch(() => null);
+  if (postButton && await postButton.isEnabled().catch(() => false)) return;
+
   throw new FacebookAutomationError(
     'UPLOAD_ERROR',
-    'Facebook chưa nhận ảnh sau khi thả trực tiếp vào hộp Tạo bài viết.'
+    'Facebook chưa xác nhận ảnh trong composer và nút Đăng vẫn chưa sẵn sàng.'
   );
 }
 
