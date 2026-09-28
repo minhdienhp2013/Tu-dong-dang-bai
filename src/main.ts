@@ -469,20 +469,22 @@ async function publishManagedPost(postId: number) {
     throw new Error('Bài này đã hoàn tất, đã hủy hoặc cần kiểm tra thủ công.');
   }
 
-  const imageIds = JSON.parse(post.image_ids_json || '[]') as number[];
-  const images = db.resolveImagePaths(imageIds).filter(i => i.active);
-  if (!images.length) throw new Error('Bài đăng chưa có ảnh hoạt động.');
-  const text = [post.title?.trim(), post.caption?.trim(), post.hashtags?.trim()].filter(Boolean).join('\n\n');
-  if (!text.trim()) throw new Error('Bài đăng chưa có nội dung.');
-
   const cfg = configStore.load();
   const mode = post.mode || cfg.runMode;
   managedPosting.add(postId);
-  db.updateSocialPostStatus(postId, 'posting');
-  db.addPostAttempt(postId, 'posting', 'Bắt đầu đăng Facebook');
-  logger.write('MANAGED_POST_START', { postId, product: post.product_name, mode });
 
   try {
+    // Lỗi dữ liệu trước khi mở Facebook cũng phải được lưu vào trạng thái bài.
+    // Nếu không, bài quá giờ sẽ đứng mãi ở "Đã lên lịch".
+    const imageIds = JSON.parse(post.image_ids_json || '[]') as number[];
+    const images = db.resolveImagePaths(imageIds).filter(i => i.active);
+    if (!images.length) throw new Error('Bài đăng chưa có ảnh hoạt động.');
+    const text = [post.title?.trim(), post.caption?.trim(), post.hashtags?.trim()].filter(Boolean).join('\n\n');
+    if (!text.trim()) throw new Error('Bài đăng chưa có nội dung.');
+
+    db.updateSocialPostStatus(postId, 'posting');
+    db.addPostAttempt(postId, 'posting', 'Bắt đầu đăng Facebook');
+    logger.write('MANAGED_POST_START', { postId, product: post.product_name, mode });
     const result = await publishToFacebook(cfg.browserProfileDir, text, images.map(i => i.file_path), mode);
     if (!result.posted) {
       throw new FacebookAutomationError(
@@ -764,9 +766,13 @@ if (gotSingleInstanceLock) {
     createWindow(showArg || (!hiddenArg && !configStore.load().startMinimized));
 
     scheduler.start(async () => {
-      await processNetworkRetries();
-      await processManagedPosts();
-      await processConfiguredSlots();
+      for (const task of [processNetworkRetries, processManagedPosts, processConfiguredSlots]) {
+        try {
+          await task();
+        } catch (error) {
+          logger.write('SCHEDULER_TICK_ERROR', { task: task.name, message: String((error as any)?.message || error) });
+        }
+      }
     }, 15_000);
   });
 }
