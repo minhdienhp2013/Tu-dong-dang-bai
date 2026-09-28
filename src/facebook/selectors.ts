@@ -11,7 +11,29 @@ export const FACEBOOK_SELECTORS = {
   ],
   photoTexts: [
     'Ảnh/video',
-    'Photo/video'
+    'Ảnh / video',
+    'Thêm ảnh/video',
+    'Thêm ảnh hoặc video',
+    'Photo/video',
+    'Photo / video',
+    'Add photos/videos',
+    'Add photos or videos'
+  ],
+  photoButtonSelectors: [
+    '[role="button"][aria-label*="Ảnh/video"]',
+    '[role="button"][aria-label*="Ảnh / video"]',
+    '[role="button"][aria-label*="Photo/video"]',
+    '[role="button"][aria-label*="Photo / video"]',
+    '[role="button"][aria-label*="Add photos"]',
+    '[aria-label*="Thêm ảnh"]'
+  ],
+  imageFileInputs: [
+    'input[type="file"][accept*="image"]',
+    'input[type="file"][accept*=".jpg"]',
+    'input[type="file"][accept*=".jpeg"]',
+    'input[type="file"][accept*=".png"]',
+    'input[type="file"][multiple]',
+    'input[type="file"]'
   ],
   postButtonNames: [
     /^Đăng$/i,
