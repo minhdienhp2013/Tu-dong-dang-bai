@@ -585,37 +585,25 @@ async function typeCaptionWithKeyboard(page: Page, dialog: Locator, caption: str
   }
 }
 
-async function findPostButton(page: Page): Promise<Locator | null> {
-  // Ưu tiên nút nằm trong dialog Tạo bài viết như DOM đã kiểm tra thực tế.
-  // Chỉ tìm toàn trang nếu Facebook chuyển nút ra ngoài dialog.
-  const selectors = [
-    '[role="dialog"] [role="button"][aria-label="Đăng"][tabindex="0"]',
-    '[role="dialog"] [role="button"][aria-label="Post"][tabindex="0"]',
-    '[role="button"][aria-label="Đăng"][tabindex="0"]',
-    '[role="button"][aria-label="Post"][tabindex="0"]'
-  ];
+async function findPostButton(composer: Locator): Promise<Locator | null> {
+  // Chỉ nhận nút trong hộp tạo bài viết đang mở. tabindex có thể đổi khi
+  // Facebook xử lý ảnh hoặc thay đổi focus, nên không dùng làm điều kiện tìm.
+  if (!await composer.isVisible().catch(() => false)) return null;
+  const matches = composer.locator(
+    '[role="button"][aria-label="Đăng"], [role="button"][aria-label="Post"]'
+  );
+  const ready: Locator[] = [];
 
-  for (const selector of selectors) {
-    const matches = page.locator(selector);
-    const count = await matches.count();
-    const ready: Locator[] = [];
-
-    for (let i = 0; i < count; i++) {
-      const btn = matches.nth(i);
-      if (!await btn.isVisible().catch(() => false)) continue;
-
-      const ariaDisabled = await btn.getAttribute('aria-disabled').catch(() => null);
-      if (ariaDisabled === 'true' || !await btn.isEnabled().catch(() => false)) continue;
-
-      ready.push(btn);
-    }
-
-    // Không đoán nút nào cần bấm khi có nhiều nút Đăng cùng lúc.
-    if (ready.length === 1) return ready[0];
-    if (ready.length > 1) return null;
+  for (let i = 0, count = await matches.count(); i < count; i++) {
+    const btn = matches.nth(i);
+    if (!await btn.isVisible().catch(() => false)) continue;
+    if (await btn.getAttribute('aria-disabled').catch(() => null) === 'true') continue;
+    if (!await btn.isEnabled().catch(() => false)) continue;
+    ready.push(btn);
   }
 
-  return null;
+  // Không bấm nếu có nhiều nút Đăng trong cùng hộp.
+  return ready.length === 1 ? ready[0] : null;
 }
 
 async function clickReadyPostButton(button: Locator) {
@@ -632,7 +620,7 @@ async function clickReadyPostButton(button: Locator) {
   }
 }
 
-async function waitForPostButtonReady(page: Page, hasImages: boolean): Promise<Locator> {
+async function waitForPostButtonReady(page: Page, composer: Locator, hasImages: boolean): Promise<Locator> {
   const deadline = Date.now() + (hasImages ? 90_000 : 30_000);
 
   while (Date.now() < deadline) {
@@ -646,7 +634,7 @@ async function waitForPostButtonReady(page: Page, hasImages: boolean): Promise<L
       );
     }
 
-    const btn = await findPostButton(page).catch(() => null);
+    const btn = await findPostButton(composer).catch(() => null);
     if (btn && await btn.isEnabled().catch(() => false)) return btn;
 
     await page.waitForTimeout(500);
@@ -655,8 +643,8 @@ async function waitForPostButtonReady(page: Page, hasImages: boolean): Promise<L
   throw new FacebookAutomationError(
     hasImages ? 'UPLOAD_ERROR' : 'FACEBOOK_UI_CHANGED',
     hasImages
-      ? 'Ảnh chưa upload xong hoặc nút Đăng chưa sẵn sàng sau thời gian chờ.'
-      : 'Nút Đăng chưa sẵn sàng sau thời gian chờ.'
+      ? 'Không tìm thấy đúng một nút Đăng khả dụng trong hộp tạo bài viết sau khi thêm ảnh. Hãy kiểm tra ảnh và nút Đăng trong cửa sổ Facebook.'
+      : 'Không tìm thấy đúng một nút Đăng khả dụng trong hộp tạo bài viết.'
   );
 }
 
@@ -856,7 +844,7 @@ export async function publishToFacebook(
     }
 
     // Chờ Facebook xử lý ảnh và chỉ tiếp tục khi nút Đăng thực sự enabled.
-    const postButton = await waitForPostButtonReady(page, images.length > 0);
+    const postButton = await waitForPostButtonReady(page, composer, images.length > 0);
     await assertSafeSession(page);
 
     // Cả TEST và AUTO đều đăng thật.
