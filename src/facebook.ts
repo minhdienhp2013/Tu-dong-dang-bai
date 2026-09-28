@@ -586,50 +586,47 @@ async function typeCaptionWithKeyboard(page: Page, dialog: Locator, caption: str
 }
 
 async function findPostButton(page: Page): Promise<Locator | null> {
-  // Chỉ sửa đúng nút Đăng. Tìm trên TOÀN TRANG thay vì giới hạn trong dialog,
-  // vì Facebook có thể portal control này ra ngoài cây DOM của composer.
+  // Ưu tiên nút nằm trong dialog Tạo bài viết như DOM đã kiểm tra thực tế.
+  // Chỉ tìm toàn trang nếu Facebook chuyển nút ra ngoài dialog.
   const selectors = [
-    'div[role="button"][aria-label="Đăng"][tabindex="0"]',
-    '[role="button"][aria-label="Đăng"]',
-    'div[role="button"][aria-label="Post"][tabindex="0"]',
-    '[role="button"][aria-label="Post"]'
+    '[role="dialog"] [role="button"][aria-label="Đăng"][tabindex="0"]',
+    '[role="dialog"] [role="button"][aria-label="Post"][tabindex="0"]',
+    '[role="button"][aria-label="Đăng"][tabindex="0"]',
+    '[role="button"][aria-label="Post"][tabindex="0"]'
   ];
 
   for (const selector of selectors) {
     const matches = page.locator(selector);
     const count = await matches.count();
+    const ready: Locator[] = [];
 
-    for (let i = count - 1; i >= 0; i--) {
+    for (let i = 0; i < count; i++) {
       const btn = matches.nth(i);
       if (!await btn.isVisible().catch(() => false)) continue;
 
       const ariaDisabled = await btn.getAttribute('aria-disabled').catch(() => null);
-      const tabIndex = await btn.getAttribute('tabindex').catch(() => null);
-      if (ariaDisabled === 'true' || tabIndex === '-1') continue;
+      if (ariaDisabled === 'true' || !await btn.isEnabled().catch(() => false)) continue;
 
-      return btn;
+      ready.push(btn);
     }
+
+    // Không đoán nút nào cần bấm khi có nhiều nút Đăng cùng lúc.
+    if (ready.length === 1) return ready[0];
+    if (ready.length > 1) return null;
   }
 
   return null;
 }
 
-async function clickReadyPostButton(page: Page, button: Locator) {
-  await button.scrollIntoViewIfNeeded().catch(() => undefined);
-  await page.waitForTimeout(700);
-
+async function clickReadyPostButton(button: Locator) {
   try {
-    // Facebook hiện dùng DIV role=button. Playwright click(force) đã không kích hoạt
-    // trên máy thực tế, nên gọi đúng DOM click của CHÍNH phần tử aria-label="Đăng".
-    // Chỉ gọi đúng MỘT lần để tránh đăng trùng.
-    await button.evaluate((element: HTMLElement) => {
-      element.focus();
-      element.click();
-    });
+    // Playwright locator.click() trên đúng DIV role=button đã đăng thành công
+    // trong Cloud Browser với một ảnh và caption; không force hoặc click lại.
+    await button.click({ timeout: 10_000 });
   } catch (error) {
     throw new FacebookAutomationError(
       'POST_UNCERTAIN',
-      'Đã tìm thấy nút Đăng nhưng thao tác click DOM không thực hiện được. Hãy kiểm tra trang cá nhân trước khi thử lại. Chi tiết: ' +
+      'Đã tìm thấy nút Đăng nhưng không xác nhận được thao tác bấm. Hãy kiểm tra trang cá nhân trước khi thử lại. Chi tiết: ' +
       String((error as any)?.message || error)
     );
   }
@@ -867,7 +864,7 @@ export async function publishToFacebook(
     // Từ thời điểm bắt đầu click, mọi lỗi sau đó đều phải coi là uncertain
     // để scheduler không thể đăng trùng.
     postClicked = true;
-    await clickReadyPostButton(page, postButton);
+    await clickReadyPostButton(postButton);
 
     try {
       await waitForPostConfirmation(page, composer);
