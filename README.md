@@ -1,4 +1,4 @@
-# Auto Social Minh Điến — v0.3.7
+# Auto Social Minh Điến — v0.3.8
 
 Ứng dụng Windows desktop để quản lý sản phẩm, ảnh, nội dung và đăng Facebook cá nhân trong **một phần mềm duy nhất**.
 
@@ -112,7 +112,7 @@ Kết quả:
 
 ```text
 release/
-  Auto Social Minh Dien Setup 0.3.7.exe
+  Auto Social Minh Dien Setup 0.3.8.exe
 ```
 
 ## Nghiệm thu trước AUTO
@@ -263,3 +263,17 @@ Quy trình TEST:
 Nếu trạng thái sau click không rõ, app ghi `POST_UNCERTAIN` và không tự thử lại để tránh đăng trùng.
 
 Giao diện hiển thị cảnh báo rõ trước khi chạy: **bài này sẽ được đăng thật lên Facebook**.
+
+
+## Sửa báo sai "Facebook chưa nhận ảnh" v0.3.8
+
+Một số giao diện Facebook đã hiển thị ảnh preview nhưng số lượng node ảnh trong DOM không tăng, vì Facebook thay nội dung trong node hiện có. Điều này làm bản cũ báo false negative.
+
+Từ v0.3.8:
+- media evidence so sánh cả số lượng và signature của `img src`, background-image và role=img;
+- không chỉ dựa vào count;
+- trong lúc chờ ảnh, nếu nút **Đăng** đã enabled trước khi caption được nhập thì coi đó là bằng chứng Facebook đã nhận ảnh;
+- kiểm tra lại nút Đăng một lần cuối trước khi báo upload thất bại;
+- vẫn không bỏ kiểm tra ảnh hoàn toàn, để tránh vô tình đăng bài chỉ có chữ.
+
+Luồng tiếp tục: thả ảnh → xác nhận ảnh hoặc nút Đăng sẵn sàng → gõ caption → click Đăng.
