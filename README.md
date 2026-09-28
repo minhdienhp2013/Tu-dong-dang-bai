@@ -1,4 +1,4 @@
-# Auto Social Minh Điến — v0.3.2
+# Auto Social Minh Điến — v0.3.3
 
 Ứng dụng Windows desktop để quản lý sản phẩm, ảnh, nội dung và đăng Facebook cá nhân trong **một phần mềm duy nhất**.
 
@@ -112,7 +112,7 @@ Kết quả:
 
 ```text
 release/
-  Auto Social Minh Dien Setup 0.3.2.exe
+  Auto Social Minh Dien Setup 0.3.3.exe
 ```
 
 ## Nghiệm thu trước AUTO
@@ -175,3 +175,17 @@ Từ v0.3.2, composer Facebook không còn phụ thuộc vào một selector duy
 - Fallback bằng textbox nhìn thấy được trong đúng composer.
 - Nếu `fill()` không hoạt động với Lexical editor, app focus và chèn text bằng keyboard của Playwright.
 - Lỗi đăng Facebook trên UI được rút gọn, không còn chuỗi `Error invoking remote method...` khó đọc.
+
+
+## Sửa upload ảnh Facebook
+
+Từ v0.3.3, bước gắn ảnh không còn chỉ tìm `input[type=file]` bên trong dialog.
+
+App thử theo nhiều lớp:
+1. input ảnh bên trong composer;
+2. input ảnh được Facebook portal ra ngoài dialog;
+3. nút **Ảnh/video** theo text, role và aria-label tiếng Việt/Anh;
+4. file chooser thật nếu Facebook phát sự kiện chọn file;
+5. chờ input ảnh mới xuất hiện sau khi bấm nút.
+
+Nếu Facebook chỉ mở khu vực **Thêm vào bài viết** ở lần bấm đầu, app tiếp tục tìm control ảnh mới và thử lại trong thời gian giới hạn.
