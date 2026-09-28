@@ -596,33 +596,28 @@ async function typeCaptionWithKeyboard(page: Page, dialog: Locator, caption: str
 }
 
 async function findPostButton(page: Page): Promise<Locator | null> {
-  const dialog = await getComposerDialog(page);
+  // Chỉ sửa đúng nút Đăng. Tìm trên TOÀN TRANG thay vì giới hạn trong dialog,
+  // vì Facebook có thể portal control này ra ngoài cây DOM của composer.
+  const selectors = [
+    'div[role="button"][aria-label="Đăng"][tabindex="0"]',
+    '[role="button"][aria-label="Đăng"]',
+    'div[role="button"][aria-label="Post"][tabindex="0"]',
+    '[role="button"][aria-label="Post"]'
+  ];
 
-  // Ưu tiên đúng cấu trúc Facebook hiện tại:
-  // <div role="button" aria-label="Đăng" tabindex="0">...</div>
-  // Không dùng class x... vì Facebook thay class liên tục.
-  for (const selector of FACEBOOK_SELECTORS.postButtonSelectors) {
-    const matches = dialog.locator(selector);
+  for (const selector of selectors) {
+    const matches = page.locator(selector);
     const count = await matches.count();
 
     for (let i = count - 1; i >= 0; i--) {
       const btn = matches.nth(i);
       if (!await btn.isVisible().catch(() => false)) continue;
-      const ariaDisabled = await btn.getAttribute('aria-disabled').catch(() => null);
-      if (ariaDisabled !== 'true') return btn;
-    }
-  }
 
-  // Fallback accessibility role/name.
-  for (const name of FACEBOOK_SELECTORS.postButtonNames) {
-    const matches = dialog.getByRole('button', { name });
-    const count = await matches.count();
-
-    for (let i = count - 1; i >= 0; i--) {
-      const btn = matches.nth(i);
-      if (!await btn.isVisible().catch(() => false)) continue;
       const ariaDisabled = await btn.getAttribute('aria-disabled').catch(() => null);
-      if (ariaDisabled !== 'true') return btn;
+      const tabIndex = await btn.getAttribute('tabindex').catch(() => null);
+      if (ariaDisabled === 'true' || tabIndex === '-1') continue;
+
+      return btn;
     }
   }
 
@@ -631,16 +626,20 @@ async function findPostButton(page: Page): Promise<Locator | null> {
 
 async function clickReadyPostButton(page: Page, button: Locator) {
   await button.scrollIntoViewIfNeeded().catch(() => undefined);
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(700);
 
   try {
-    // Chỉ gửi đúng MỘT click. force=true phù hợp với nút div[role=button]
-    // của Facebook và tránh vòng fallback có nguy cơ click lặp.
-    await button.click({ timeout: 7000, force: true });
+    // Facebook hiện dùng DIV role=button. Playwright click(force) đã không kích hoạt
+    // trên máy thực tế, nên gọi đúng DOM click của CHÍNH phần tử aria-label="Đăng".
+    // Chỉ gọi đúng MỘT lần để tránh đăng trùng.
+    await button.evaluate((element: HTMLElement) => {
+      element.focus();
+      element.click();
+    });
   } catch (error) {
     throw new FacebookAutomationError(
       'POST_UNCERTAIN',
-      'Đã bắt đầu thao tác bấm nút Đăng nhưng không xác nhận được click. Hãy kiểm tra trang cá nhân trước khi thử lại. Chi tiết: ' +
+      'Đã tìm thấy nút Đăng nhưng thao tác click DOM không thực hiện được. Hãy kiểm tra trang cá nhân trước khi thử lại. Chi tiết: ' +
       String((error as any)?.message || error)
     );
   }
