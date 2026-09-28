@@ -181,7 +181,7 @@ async function fillCaption(page: Page, caption: string) {
   );
 }
 
-async function setImagesOnInputs(root: Locator | Page, images: string[]): Promise<boolean> {
+async function setImagesOnInputs(root: Locator | Page, images: string[], allowGeneric = true): Promise<boolean> {
   for (const selector of FACEBOOK_SELECTORS.imageFileInputs) {
     const inputs = root.locator(selector);
     const count = await inputs.count().catch(() => 0);
@@ -195,6 +195,7 @@ async function setImagesOnInputs(root: Locator | Page, images: string[]): Promis
         // Tránh input rõ ràng chỉ dành cho video/file khác. Input không có accept
         // vẫn được thử vì Facebook có phiên bản dùng input generic trong composer.
         if (accept && !/image|\.jpe?g|\.png|\.webp/.test(accept)) continue;
+        if (!accept && !allowGeneric) continue;
         if (images.length > 1 && multiple === null && count > 1) continue;
 
         await input.setInputFiles(images, { timeout: 5000 });
@@ -209,7 +210,7 @@ async function setImagesOnInputs(root: Locator | Page, images: string[]): Promis
   return false;
 }
 
-async function clickPhotoControl(page: Page, dialog: Locator): Promise<boolean> {
+async function clickPhotoControl(page: Page, dialog: Locator, images: string[]): Promise<boolean> {
   const candidates: Locator[] = [];
 
   for (const selector of FACEBOOK_SELECTORS.photoButtonSelectors) {
@@ -225,12 +226,12 @@ async function clickPhotoControl(page: Page, dialog: Locator): Promise<boolean> 
     if (!await candidate.isVisible().catch(() => false)) continue;
 
     try {
-      const chooserPromise = page.waitForEvent('filechooser', { timeout: 3500 }).catch(() => null);
+      const chooserPromise = page.waitForEvent('filechooser', { timeout: 1800 }).catch(() => null);
       await candidate.click({ timeout: 4000 });
       const chooser = await chooserPromise;
 
       if (chooser) {
-        await chooser.setFiles([]);
+        await chooser.setFiles(images);
         return true;
       }
 
@@ -258,7 +259,7 @@ async function addPhotos(page: Page, images: string[]) {
   if (await setImagesOnInputs(dialog, images)) return;
 
   // Lớp 2: Facebook đôi khi portal input ra ngoài dialog.
-  if (await setImagesOnInputs(page, images)) return;
+  if (await setImagesOnInputs(page, images, false)) return;
 
   // Lớp 3: bấm Ảnh/video để Facebook tạo input/chooser.
   const deadline = Date.now() + 15_000;
@@ -268,12 +269,12 @@ async function addPhotos(page: Page, images: string[]) {
     await assertSafeSession(page);
 
     if (!clickedPhotoControl) {
-      clickedPhotoControl = await clickPhotoControl(page, dialog);
+      clickedPhotoControl = await clickPhotoControl(page, dialog, images);
     }
 
     // Sau click, input có thể xuất hiện trong dialog hoặc ở body.
     if (await setImagesOnInputs(dialog, images)) return;
-    if (await setImagesOnInputs(page, images)) return;
+    if (await setImagesOnInputs(page, images, false)) return;
 
     // Nếu lần click đầu chỉ mở vùng "Thêm vào bài viết", cho phép tìm/click
     // lại một control Ảnh/video mới xuất hiện.
