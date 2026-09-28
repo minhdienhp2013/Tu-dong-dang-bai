@@ -385,6 +385,96 @@ export class AppDb {
     return this.db.prepare('SELECT * FROM product_images WHERE product_id = ? ORDER BY sort_order, id').all(productId) as ProductImageRecord[];
   }
 
+  importCatalog(input: {
+    categories: Array<{ id: number; parent_id: number | null; name: string }>;
+    products: Array<{ id: number; category_id: number | null; name: string; description: string; info_text: string; default_hashtags: string; active: number }>;
+    images: Array<{ id: number; product_id: number; file: string; note: string; active: number }>;
+    styles: StyleRecord[];
+    contents: ContentDraftRecord[];
+    schedules: SocialPostRecord[];
+  }, importImage: (productId: number, file: string, existing: string[]) => string) {
+    const categoryIds = new Map<number, number>();
+    const productIds = new Map<number, number>();
+    const imageIds = new Map<number, number>();
+    const contentIds = new Map<number, number>();
+    const styleIds = new Map<number, number>();
+    const counts = { categories: 0, products: 0, images: 0, styles: 0, contents: 0, schedules: 0 };
+    this.transaction(() => {
+      const pending = new Map(input.categories.map(c => [c.id, c]));
+      while (pending.size) {
+        let progressed = false;
+        for (const [oldId, category] of pending) {
+          if (category.parent_id != null && !categoryIds.has(category.parent_id)) continue;
+          const parentId = category.parent_id == null ? null : categoryIds.get(category.parent_id)!;
+          let current = this.listCategories().find(c => c.parent_id === parentId && c.name === category.name);
+          if (!current) { current = this.createCategory(category.name, parentId); counts.categories++; }
+          categoryIds.set(oldId, current.id);
+          pending.delete(oldId);
+          progressed = true;
+        }
+        if (!progressed) throw new Error('Danh mục trong bản sao lưu có quan hệ cha/con không hợp lệ.');
+      }
+      for (const product of input.products) {
+        if (product.category_id != null && !categoryIds.has(product.category_id)) throw new Error('Sản phẩm thiếu danh mục.');
+        const categoryId = product.category_id == null ? null : categoryIds.get(product.category_id)!;
+        let current = this.listProducts().find(p => p.category_id === categoryId && p.name === product.name);
+        if (!current) {
+          current = this.createProduct({ categoryId, name: product.name, description: product.description,
+            infoText: product.info_text, defaultHashtags: product.default_hashtags });
+          if (!product.active) current = this.updateProduct(current.id, { categoryId, name: product.name,
+            description: product.description, infoText: product.info_text, defaultHashtags: product.default_hashtags, active: false });
+          counts.products++;
+        }
+        productIds.set(product.id, current.id);
+      }
+      for (const image of input.images) {
+        const productId = productIds.get(image.product_id);
+        if (!productId) throw new Error('Ảnh trong bản sao lưu thiếu sản phẩm.');
+        const file = importImage(productId, image.file, this.listImages(productId).map(i => i.file_path));
+        const matching = this.listImages(productId).find(i => i.file_path === file);
+        if (matching) { imageIds.set(image.id, matching.id); continue; }
+        const now = nowIso();
+        const info = this.db.prepare(`INSERT INTO product_images(product_id, file_path, note, sort_order, active, used_count, created_at)
+          VALUES (?, ?, ?, ?, ?, 0, ?)`).run(productId, file, image.note, this.listImages(productId).length, image.active ? 1 : 0, now);
+        imageIds.set(image.id, Number(info.lastInsertRowid));
+        counts.images++;
+      }
+      for (const style of input.styles) {
+        let current = this.listStyles().find(s => s.name === style.name);
+        if (!current) { current = this.createStyle(style.name, style.prompt, !!style.enabled); counts.styles++; }
+        styleIds.set(style.id, current.id);
+      }
+      for (const content of input.contents) {
+        const productId = productIds.get(content.product_id);
+        if (!productId) throw new Error('Nội dung thiếu sản phẩm.');
+        let current = this.listContents(productId).find(c => c.title === content.title && c.caption === content.caption && c.hashtags === content.hashtags);
+        if (!current) {
+          current = this.createContent(productId, { title: content.title, caption: content.caption, hashtags: content.hashtags },
+            content.source === 'manual' ? 'manual' : 'ai', content.ai_original || undefined,
+            content.style_id == null ? null : styleIds.get(content.style_id) || null);
+          if (content.status === 'approved' || content.status === 'used') current = this.updateContent(current.id, { status: content.status });
+          counts.contents++;
+        }
+        contentIds.set(content.id, current.id);
+      }
+      for (const schedule of input.schedules) {
+        const productId = productIds.get(schedule.product_id);
+        const contentId = schedule.content_id == null ? null : contentIds.get(schedule.content_id);
+        if (!productId || !contentId) throw new Error('Lịch đăng thiếu sản phẩm hoặc nội dung.');
+        const ids = JSON.parse(schedule.image_ids_json || '[]') as number[];
+        const mapped = ids.map(id => imageIds.get(id));
+        if (mapped.some(id => id == null)) throw new Error('Lịch đăng thiếu ảnh.');
+        const duplicate = this.db.prepare(`SELECT id FROM social_posts WHERE product_id = ? AND content_id = ?
+          AND scheduled_at = ? AND status IN ('scheduled','posting','posted')`).get(productId, contentId, schedule.scheduled_at) as any;
+        if (duplicate) continue;
+        this.createSocialPost({ productId, contentId, imageIds: mapped as number[], scheduledAt: schedule.scheduled_at,
+          status: 'scheduled', mode: schedule.mode === 'auto' ? 'auto' : 'test' });
+        counts.schedules++;
+      }
+    });
+    return counts;
+  }
+
   getImage(id: number): ProductImageRecord | null {
     return (this.db.prepare('SELECT * FROM product_images WHERE id = ?').get(id) as ProductImageRecord) || null;
   }
@@ -469,6 +559,10 @@ export class AppDb {
       FROM social_posts sp JOIN products p ON p.id = sp.product_id LEFT JOIN content_drafts d ON d.id = sp.content_id
       WHERE sp.status = 'scheduled' AND sp.scheduled_at IS NOT NULL AND sp.scheduled_at <= ?
       ORDER BY sp.scheduled_at LIMIT 5`).all(now) as SocialPostRecord[];
+  }
+
+  listPendingSchedulesForBackup(): SocialPostRecord[] {
+    return this.db.prepare("SELECT * FROM social_posts WHERE status = 'scheduled' ORDER BY id").all() as SocialPostRecord[];
   }
 
   getRetryableSocialPosts(now: string): SocialPostRecord[] {
