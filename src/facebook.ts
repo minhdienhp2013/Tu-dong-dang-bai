@@ -105,24 +105,29 @@ async function getComposerDialog(page: Page) {
 
 async function fillEditor(locator: Locator, page: Page, caption: string) {
   await locator.scrollIntoViewIfNeeded().catch(() => undefined);
-  await locator.click({ timeout: 3000 }).catch(() => undefined);
+  await locator.click({ timeout: 3000 });
 
   try {
     await locator.fill(caption, { timeout: 5000 });
   } catch {
     // Một số bản Facebook dùng Lexical editor: locator.fill có thể không nhận.
     // Khi đó focus editor rồi chèn text bằng bàn phím thật của Playwright.
-    await locator.focus().catch(() => undefined);
-    await page.keyboard.press('Control+A').catch(() => undefined);
+    await locator.focus();
+    const focused = await locator.evaluate(el => el === document.activeElement || el.contains(document.activeElement));
+    if (!focused) return false;
+    await page.keyboard.press('Control+A');
     await page.keyboard.insertText(caption);
   }
 
-  const text = (await locator.innerText().catch(() => '')).trim();
-  if (text || !caption.trim()) return true;
-
-  // Với một số contenteditable, innerText cập nhật trễ.
-  await page.waitForTimeout(300);
-  return (await locator.innerText().catch(() => '')).trim().length > 0;
+  // Chỉ chấp nhận khi chính editor chứa nội dung vừa nhập; không dựa vào text
+  // ở dialog vì nội dung có thể bị gõ nhầm vào ô khác.
+  const probe = normalizeVisibleText(caption).slice(0, 60);
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const text = normalizeVisibleText(await locator.innerText().catch(() => ''));
+    if (probe && text.includes(probe)) return true;
+    await page.waitForTimeout(300);
+  }
+  return false;
 }
 
 async function findVisibleComposerEditor(dialog: Locator): Promise<Locator | null> {
@@ -551,38 +556,19 @@ async function dragImagesIntoComposer(page: Page, dialog: Locator, images: strin
 async function typeCaptionWithKeyboard(page: Page, dialog: Locator, caption: string) {
   if (!caption.trim()) return;
 
-  // Sau khi mở composer Facebook đã focus sẵn vùng viết bài. Không tìm selector
-  // editor nữa; chỉ nhập text vào focus hiện tại bằng keyboard.
-  await page.waitForTimeout(900);
-
-  const lines = caption.replace(/\r\n/g, '\n').split('\n');
-  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
-    const chars = Array.from(lines[lineIndex]);
-
-    // Chia text thành block nhỏ để editor Facebook không bỏ ký tự khi UI đang
-    // đồng thời xử lý preview ảnh.
-    for (let i = 0; i < chars.length; i += 80) {
-      await page.keyboard.insertText(chars.slice(i, i + 80).join(''));
-      await page.waitForTimeout(90);
-    }
-
-    if (lineIndex < lines.length - 1) {
-      await page.keyboard.press('Enter');
-      await page.waitForTimeout(120);
-    }
+  // Facebook có thể chuyển focus sang nút ảnh hoặc phần tử khác sau khi mở
+  // composer. Tìm editor trong đúng dialog, chủ động focus rồi kiểm tra chữ.
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    await assertSafeSession(page);
+    const editor = await findVisibleComposerEditor(dialog);
+    if (editor && await fillEditor(editor, page, caption).catch(() => false)) return;
+    await page.waitForTimeout(350);
   }
-
-  await page.waitForTimeout(500);
-
-  // Chỉ xác nhận caption đã xuất hiện trong dialog; không cần biết editor nằm đâu.
-  const probe = normalizeVisibleText(caption).slice(0, 24);
-  const dialogText = normalizeVisibleText(await dialog.innerText().catch(() => ''));
-  if (probe && !dialogText.includes(probe)) {
-    throw new FacebookAutomationError(
-      'FACEBOOK_UI_CHANGED',
-      'Facebook không giữ focus ở vùng viết bài nên nội dung chưa được nhập. Không tiếp tục để tránh đăng thiếu chữ.'
-    );
-  }
+  throw new FacebookAutomationError(
+    'FACEBOOK_UI_CHANGED',
+    'Không nhập được nội dung vào ô viết bài trong hộp Tạo bài viết. Facebook có thể đã đổi giao diện.'
+  );
 }
 
 async function findPostButton(composer: Locator): Promise<Locator | null> {
