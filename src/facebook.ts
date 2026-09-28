@@ -568,11 +568,53 @@ async function typeCaptionWithKeyboard(page: Page, dialog: Locator, caption: str
 
 async function findPostButton(page: Page): Promise<Locator | null> {
   const dialog = await getComposerDialog(page);
-  for (const name of FACEBOOK_SELECTORS.postButtonNames) {
-    const btn = dialog.getByRole('button', { name }).first();
-    if (await btn.isVisible().catch(() => false)) return btn;
+
+  // Ưu tiên đúng cấu trúc Facebook hiện tại:
+  // <div role="button" aria-label="Đăng" tabindex="0">...</div>
+  // Không dùng class x... vì Facebook thay class liên tục.
+  for (const selector of FACEBOOK_SELECTORS.postButtonSelectors) {
+    const matches = dialog.locator(selector);
+    const count = await matches.count();
+
+    for (let i = count - 1; i >= 0; i--) {
+      const btn = matches.nth(i);
+      if (!await btn.isVisible().catch(() => false)) continue;
+      const ariaDisabled = await btn.getAttribute('aria-disabled').catch(() => null);
+      if (ariaDisabled !== 'true') return btn;
+    }
   }
+
+  // Fallback accessibility role/name.
+  for (const name of FACEBOOK_SELECTORS.postButtonNames) {
+    const matches = dialog.getByRole('button', { name });
+    const count = await matches.count();
+
+    for (let i = count - 1; i >= 0; i--) {
+      const btn = matches.nth(i);
+      if (!await btn.isVisible().catch(() => false)) continue;
+      const ariaDisabled = await btn.getAttribute('aria-disabled').catch(() => null);
+      if (ariaDisabled !== 'true') return btn;
+    }
+  }
+
   return null;
+}
+
+async function clickReadyPostButton(page: Page, button: Locator) {
+  await button.scrollIntoViewIfNeeded().catch(() => undefined);
+  await page.waitForTimeout(500);
+
+  try {
+    // Chỉ gửi đúng MỘT click. force=true phù hợp với nút div[role=button]
+    // của Facebook và tránh vòng fallback có nguy cơ click lặp.
+    await button.click({ timeout: 7000, force: true });
+  } catch (error) {
+    throw new FacebookAutomationError(
+      'POST_UNCERTAIN',
+      'Đã bắt đầu thao tác bấm nút Đăng nhưng không xác nhận được click. Hãy kiểm tra trang cá nhân trước khi thử lại. Chi tiết: ' +
+      String((error as any)?.message || error)
+    );
+  }
 }
 
 async function waitForPostButtonReady(page: Page, hasImages: boolean): Promise<Locator> {
@@ -812,8 +854,10 @@ export async function publishToFacebook(
       };
     }
 
-    await postButton.click();
+    // Từ thời điểm bắt đầu click, mọi lỗi sau đó đều phải coi là uncertain
+    // để scheduler không thể đăng trùng.
     postClicked = true;
+    await clickReadyPostButton(page, postButton);
 
     try {
       await waitForPostConfirmation(page, composer);
