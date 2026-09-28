@@ -25,7 +25,11 @@ export const FACEBOOK_SELECTORS = {
     '[role="button"][aria-label*="Photo/video"]',
     '[role="button"][aria-label*="Photo / video"]',
     '[role="button"][aria-label*="Add photos"]',
-    '[aria-label*="Thêm ảnh"]'
+    '[aria-label*="Thêm ảnh"]',
+
+    // Fallback theo icon Ảnh/video đang thấy trên Facebook hiện tại.
+    // Selector này chỉ là phương án cuối vì tên asset có thể đổi theo build.
+    'img[src*="8_VnccIZfRa.webp"]'
   ],
   imageFileInputs: [
     'input[type="file"][accept*="image"]',
