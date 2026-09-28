@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld('autoSocial', {
   updateStyle: (id: number, data: any) => ipcRenderer.invoke('styles:update', id, data),
   deleteStyle: (id: number) => ipcRenderer.invoke('styles:delete', id),
   setDefaultStyle: (id: number) => ipcRenderer.invoke('styles:set-default', id),
+  setRandomStyle: (enabled: boolean) => ipcRenderer.invoke('styles:set-random', enabled),
 
   openLogin: () => ipcRenderer.invoke('facebook:login'),
   checkFacebookStatus: () => ipcRenderer.invoke('facebook:status'),
