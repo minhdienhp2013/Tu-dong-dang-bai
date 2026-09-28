@@ -219,11 +219,14 @@ function choosePostingCandidate(candidates: PostingCandidate[], daysBeforeRepeat
   return eligible[0] || null;
 }
 
-function selectedStylePrompt() {
+function selectedWritingStyle() {
   const cfg = configStore.load();
   const styles = db.listStyles();
-  const style = styles.find(s => s.id === cfg.defaultStyleId) || styles.find(s => s.is_default) || styles.find(s => s.enabled);
-  return style?.prompt || cfg.stylePrompt;
+  const enabled = styles.filter(s => s.enabled);
+  const style = cfg.randomStyleEnabled && enabled.length
+    ? enabled[Math.floor(Math.random() * enabled.length)]
+    : enabled.find(s => s.id === cfg.defaultStyleId) || enabled.find(s => s.is_default) || enabled[0];
+  return { prompt: style?.prompt || cfg.stylePrompt, id: style?.id || null };
 }
 
 async function makeDraft(productId?: number): Promise<DraftPost> {
@@ -678,11 +681,12 @@ function registerIpc() {
     const product = db.getProduct(Number(productId));
     if (!product) throw new Error('Không tìm thấy sản phẩm.');
     const images = db.listImages(product.id).filter(i => i.active);
+    const style = selectedWritingStyle();
     const result = await generateProductContent(
       configStore.load(), product, images,
-      db.recentLearning(10, product.name), selectedStylePrompt()
+      db.recentLearning(10, product.name), style.prompt
     );
-    return db.createContent(product.id, result, 'ai', result.caption, configStore.load().defaultStyleId);
+    return db.createContent(product.id, result, 'ai', result.caption, style.id);
   });
   ipcMain.handle('content:create-manual', (_e, productId: number, data) => db.createContent(Number(productId), {
     title: String(data?.title || ''), caption: String(data?.caption || ''), hashtags: String(data?.hashtags || '')
@@ -709,12 +713,19 @@ function registerIpc() {
   ipcMain.handle('history:list', () => db.listPostHistory(200));
 
   ipcMain.handle('styles:list', () => db.listStyles());
-  ipcMain.handle('styles:create', (_e, data) => db.createStyle(String(data?.name || ''), String(data?.prompt || '')));
+  ipcMain.handle('styles:create', (_e, data) => db.createStyle(String(data?.name || ''), String(data?.prompt || ''), data?.enabled !== false));
   ipcMain.handle('styles:update', (_e, id: number, data) => db.updateStyle(Number(id), data || {}));
   ipcMain.handle('styles:delete', (_e, id: number) => { db.deleteStyle(Number(id)); return { ok: true }; });
   ipcMain.handle('styles:set-default', (_e, id: number) => {
     db.setDefaultStyle(Number(id));
-    const saved = configStore.save({ defaultStyleId: Number(id) });
+    const saved = configStore.save({ defaultStyleId: Number(id), randomStyleEnabled: false });
+    return { styles: db.listStyles(), config: saved };
+  });
+  ipcMain.handle('styles:set-random', (_e, enabled: boolean) => {
+    if (enabled && !db.listStyles().some(style => style.enabled)) {
+      throw new Error('Hãy bật ít nhất một phong cách trước khi chọn ngẫu nhiên.');
+    }
+    const saved = configStore.save({ randomStyleEnabled: enabled === true });
     return { styles: db.listStyles(), config: saved };
   });
 

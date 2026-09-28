@@ -39,6 +39,7 @@ declare global {
       updateStyle(id: number, data: any): Promise<any>;
       deleteStyle(id: number): Promise<any>;
       setDefaultStyle(id: number): Promise<any>;
+      setRandomStyle(enabled: boolean): Promise<any>;
 
       openLogin(): Promise<any>;
       checkFacebookStatus(): Promise<any>;

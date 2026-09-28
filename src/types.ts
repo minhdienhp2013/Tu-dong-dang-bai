@@ -30,6 +30,7 @@ export type AppConfig = {
   minimizeToTray: boolean;
   keepRunningInTray: boolean;
   defaultStyleId: number | null;
+  randomStyleEnabled: boolean;
 };
 
 export type CategoryRecord = {

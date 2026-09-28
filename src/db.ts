@@ -578,10 +578,10 @@ export class AppDb {
     return this.db.prepare('SELECT * FROM styles ORDER BY is_default DESC, enabled DESC, name COLLATE NOCASE').all() as StyleRecord[];
   }
 
-  createStyle(name: string, prompt: string): StyleRecord {
+  createStyle(name: string, prompt: string, enabled = true): StyleRecord {
     const now = nowIso();
-    const info = this.db.prepare('INSERT INTO styles(name, prompt, enabled, is_default, created_at, updated_at) VALUES (?, ?, 1, 0, ?, ?)')
-      .run(name.trim(), prompt.trim(), now, now);
+    const info = this.db.prepare('INSERT INTO styles(name, prompt, enabled, is_default, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?)')
+      .run(name.trim(), prompt.trim(), enabled ? 1 : 0, now, now);
     return this.db.prepare('SELECT * FROM styles WHERE id = ?').get(info.lastInsertRowid) as StyleRecord;
   }
 

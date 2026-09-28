@@ -41,7 +41,8 @@ function defaultConfig(): AppConfig {
     startMinimized: false,
     minimizeToTray: true,
     keepRunningInTray: true,
-    defaultStyleId: null
+    defaultStyleId: null,
+    randomStyleEnabled: false
   };
 }
 
@@ -53,6 +54,7 @@ function sanitizeConfig(raw: Partial<AppConfig>, base: AppConfig): AppConfig {
     ...cleanRaw,
     postingTimes: Array.isArray(raw.postingTimes) ? raw.postingTimes.filter(Boolean) : base.postingTimes,
     runMode: raw.runMode === 'auto' ? 'auto' : 'test',
+    randomStyleEnabled: raw.randomStyleEnabled === true,
     imagesPerPost: Math.max(1, Math.min(10, Number(raw.imagesPerPost ?? base.imagesPerPost))),
     daysBeforeRepeatProduct: Math.max(0, Number(raw.daysBeforeRepeatProduct ?? base.daysBeforeRepeatProduct)),
     imageReuseAfterDays: Math.max(0, Number(raw.imageReuseAfterDays ?? base.imageReuseAfterDays))
