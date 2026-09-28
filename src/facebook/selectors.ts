@@ -39,6 +39,12 @@ export const FACEBOOK_SELECTORS = {
     'input[type="file"][multiple]',
     'input[type="file"]'
   ],
+  postButtonSelectors: [
+    '[role="button"][aria-label="Đăng"]',
+    '[role="button"][aria-label="Post"]',
+    'div[role="button"][aria-label="Đăng"][tabindex="0"]',
+    'div[role="button"][aria-label="Post"][tabindex="0"]'
+  ],
   postButtonNames: [
     /^Đăng$/i,
     /^Post$/i
