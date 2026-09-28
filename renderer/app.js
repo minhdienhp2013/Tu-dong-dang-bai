@@ -64,7 +64,7 @@ $('pauseBtn').onclick=async()=>{
 };
 $('postNextBtn').onclick=async()=>{
   if(!confirm('Thực hiện bài tiếp theo theo chế độ TEST/AUTO hiện tại?'))return;
-  try{await window.autoSocial.postNext();await loadDashboard();await loadHistory();}catch(e){alert(e.message);}
+  try{await window.autoSocial.postNext();await loadDashboard();await loadHistory();}catch(e){const msg=friendlyError(e);setStatus('❌ '+msg);alert(msg);}
 };
 
 async function generateDraft(){
@@ -122,7 +122,7 @@ $('postNowBtn').onclick=async()=>{
     const result=await window.autoSocial.postDraft(currentDraft);
     if(result.posted){$('draftBox').classList.add('hidden');currentDraft=null;}
     await Promise.all([loadDashboard(),loadHistory()]);
-  }catch(e){alert(e.message);}
+  }catch(e){const msg=friendlyError(e);setStatus('❌ '+msg);alert(msg);}
 };
 
 function buildCategoryOptions(includeAll=false,excludeId=null){
@@ -215,7 +215,7 @@ $('newScheduleBtn').onclick=async()=>{await loadAllProductsForSelectors();const 
 $('scheduleProduct').onchange=async()=>{const pid=Number($('scheduleProduct').value);if(!pid)return;const res=await Promise.all([window.autoSocial.listContents(pid),window.autoSocial.listImages(pid)]);const contents=res[0],images=res[1];const usable=contents.filter(c=>c.status!=='used');$('scheduleContent').innerHTML=['<option value="">Chọn nội dung</option>'].concat(usable.map(c=>'<option value="'+c.id+'">'+esc((c.title||c.caption).slice(0,70))+'</option>')).join('');$('scheduleImagePicker').innerHTML=images.filter(i=>i.active).map(i=>'<label class="picker-card"><input type="checkbox" value="'+i.id+'" checked><img src="'+fileUrl(i.file_path)+'"><span>'+esc(i.note||'Không ghi chú')+'</span></label>').join('')||'<div class="empty">Chưa có ảnh hoạt động.</div>';};
 $('saveScheduleDialogBtn').onclick=async e=>{e.preventDefault();const productId=Number($('scheduleProduct').value),contentId=Number($('scheduleContent').value);const imageIds=[...$('scheduleImagePicker').querySelectorAll('input[type=checkbox]:checked')].map(x=>Number(x.value));const scheduledAt=$('scheduleAt').value||null;if(!productId||!contentId)return alert('Chọn sản phẩm và nội dung.');if(!imageIds.length)return alert('Chọn ít nhất 1 ảnh.');await window.autoSocial.schedulePost({productId,contentId,imageIds,scheduledAt,mode:$('scheduleMode').value});$('scheduleDialog').close();await loadSchedules();};
 
-async function loadSchedules(){const rows=await window.autoSocial.listScheduledPosts();$('scheduleList').innerHTML=rows.length?rows.map(r=>'<div class="table-row"><div><b>'+esc(r.product_name||'')+'</b><div class="muted">'+esc(r.title||'')+'</div></div><div>'+esc((r.mode||'test').toUpperCase())+'<br>'+(r.scheduled_at?fmtDate(r.scheduled_at):'Chưa đặt giờ')+'</div><div><span class="badge '+(['failed','uncertain'].includes(r.status)?'error':'')+'">'+statusLabel(r.status)+'</span>'+(r.error_code?'<div class="error-text">'+esc(r.error_code)+'</div>':'')+'</div><div class="row compact actions">'+(!['posting','posted','uncertain','cancelled'].includes(r.status)?'<button class="mini post-now" data-id="'+r.id+'">▶ Đăng ngay</button>':'')+(!['posted','cancelled'].includes(r.status)?'<button class="mini danger cancel-post" data-id="'+r.id+'">Hủy</button>':'')+'</div></div>').join(''):'<div class="empty">Chưa có bài trong hàng đợi.</div>';document.querySelectorAll('.post-now').forEach(b=>b.onclick=async()=>{if(!confirm('Thực hiện bài này ngay?'))return;try{await window.autoSocial.postNow(Number(b.dataset.id));await Promise.all([loadSchedules(),loadHistory()]);}catch(e){alert(e.message);await loadSchedules();}});document.querySelectorAll('.cancel-post').forEach(b=>b.onclick=async()=>{await window.autoSocial.cancelPost(Number(b.dataset.id));await loadSchedules();});}
+async function loadSchedules(){const rows=await window.autoSocial.listScheduledPosts();$('scheduleList').innerHTML=rows.length?rows.map(r=>'<div class="table-row"><div><b>'+esc(r.product_name||'')+'</b><div class="muted">'+esc(r.title||'')+'</div></div><div>'+esc((r.mode||'test').toUpperCase())+'<br>'+(r.scheduled_at?fmtDate(r.scheduled_at):'Chưa đặt giờ')+'</div><div><span class="badge '+(['failed','uncertain'].includes(r.status)?'error':'')+'">'+statusLabel(r.status)+'</span>'+(r.error_code?'<div class="error-text">'+esc(r.error_code)+'</div>':'')+'</div><div class="row compact actions">'+(!['posting','posted','uncertain','cancelled'].includes(r.status)?'<button class="mini post-now" data-id="'+r.id+'">▶ Đăng ngay</button>':'')+(!['posted','cancelled'].includes(r.status)?'<button class="mini danger cancel-post" data-id="'+r.id+'">Hủy</button>':'')+'</div></div>').join(''):'<div class="empty">Chưa có bài trong hàng đợi.</div>';document.querySelectorAll('.post-now').forEach(b=>b.onclick=async()=>{if(!confirm('Thực hiện bài này ngay?'))return;try{await window.autoSocial.postNow(Number(b.dataset.id));await Promise.all([loadSchedules(),loadHistory()]);}catch(e){const msg=friendlyError(e);setStatus('❌ '+msg);alert(msg);await loadSchedules();}});document.querySelectorAll('.cancel-post').forEach(b=>b.onclick=async()=>{await window.autoSocial.cancelPost(Number(b.dataset.id));await loadSchedules();});}
 
 async function loadHistory(){
   const res=await Promise.all([window.autoSocial.listHistory(),window.autoSocial.recentPosts()]);
