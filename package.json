@@ -1,6 +1,6 @@
 {
   "name": "auto-social-minh-dien",
-  "version": "0.3.7",
+  "version": "0.3.8",
   "description": "Windows app: app-managed products, media and content -> safe scheduler -> Facebook personal-profile automation",
   "main": "dist/main.js",
   "author": "Minh Dien",
