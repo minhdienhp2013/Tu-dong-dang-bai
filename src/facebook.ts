@@ -673,6 +673,39 @@ async function waitForPostConfirmation(page: Page, composer: Locator) {
 }
 
 async function launch(profileDir: string): Promise<BrowserContext> {
+  // Trên macOS dùng đúng executable đã cài trong /Applications để tránh phụ thuộc
+  // channel discovery của Playwright. Windows giữ nguyên luồng hiện tại.
+  if (process.platform === 'darwin') {
+    const browser = findInstalledBrowser();
+    if (!browser) {
+      throw new FacebookAutomationError(
+        'UNKNOWN',
+        'Không tìm thấy Google Chrome hoặc Microsoft Edge trên macOS. Hãy cài một trong hai trình duyệt rồi thử lại.'
+      );
+    }
+
+    try {
+      return await chromium.launchPersistentContext(profileDir, {
+        executablePath: browser.executable,
+        headless: false,
+        viewport: null,
+        ignoreDefaultArgs: ['--no-sandbox']
+      });
+    } catch (error) {
+      const detail = String((error as any)?.message || error);
+      if (/user data directory|profile.*in use|processsingleton|singletonlock|browser is already running/i.test(detail)) {
+        throw new FacebookAutomationError(
+          'UNKNOWN',
+          'Hồ sơ Facebook của ứng dụng đang được một cửa sổ trình duyệt khác sử dụng. Hãy đóng cửa sổ Chrome/Edge do Auto Social mở rồi thử lại.'
+        );
+      }
+      throw new FacebookAutomationError(
+        classifyUnknownError(detail),
+        'Không thể mở ' + browser.name + ' trên macOS: ' + detail
+      );
+    }
+  }
+
   const channels: Array<'chrome' | 'msedge'> = ['chrome', 'msedge'];
   const errors: string[] = [];
 
@@ -709,7 +742,28 @@ async function launch(profileDir: string): Promise<BrowserContext> {
 }
 
 function findInstalledBrowser(): { name: string; executable: string } | null {
-  const candidates = [
+  const home = process.env.HOME || '';
+
+  const macCandidates = [
+    {
+      name: 'Google Chrome',
+      executable: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+    },
+    {
+      name: 'Google Chrome',
+      executable: path.join(home, 'Applications', 'Google Chrome.app', 'Contents', 'MacOS', 'Google Chrome')
+    },
+    {
+      name: 'Microsoft Edge',
+      executable: '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'
+    },
+    {
+      name: 'Microsoft Edge',
+      executable: path.join(home, 'Applications', 'Microsoft Edge.app', 'Contents', 'MacOS', 'Microsoft Edge')
+    }
+  ];
+
+  const windowsCandidates = [
     {
       name: 'Microsoft Edge',
       executable: path.join(process.env.PROGRAMFILES || '', 'Microsoft', 'Edge', 'Application', 'msedge.exe')
@@ -736,6 +790,7 @@ function findInstalledBrowser(): { name: string; executable: string } | null {
     }
   ];
 
+  const candidates = process.platform === 'darwin' ? macCandidates : windowsCandidates;
   return candidates.find(item => item.executable && fs.existsSync(item.executable)) || null;
 }
 
@@ -751,15 +806,17 @@ export async function openFacebookForLogin(profileDir: string): Promise<void> {
   fs.mkdirSync(profileDir, { recursive: true });
 
   try {
-    const child = spawn(browser.executable, [
+    const browserArgs = [
       `--user-data-dir=${profileDir}`,
       '--profile-directory=Default',
-      '--start-maximized',
+      ...(process.platform === 'win32' ? ['--start-maximized'] : []),
       FACEBOOK_URLS.home
-    ], {
+    ];
+
+    const child = spawn(browser.executable, browserArgs, {
       detached: true,
       stdio: 'ignore',
-      windowsHide: false
+      windowsHide: process.platform === 'win32'
     });
     child.unref();
   } catch (error) {
