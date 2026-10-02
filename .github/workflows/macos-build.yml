@@ -1,0 +1,52 @@
+name: macOS Build
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  macos-build:
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Show runtime versions
+        run: |
+          node -v
+          npm -v
+          sw_vers
+          uname -m
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Compile and renderer syntax test
+        run: npm test
+
+      - name: Build macOS DMG and ZIP
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npm run build:mac
+
+      - name: Show artifacts
+        run: ls -lah release
+
+      - name: Upload macOS packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: auto-social-minh-dien-macos
+          path: |
+            release/*.dmg
+            release/*.zip
+          if-no-files-found: error
+          retention-days: 30

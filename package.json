@@ -1,17 +1,21 @@
 {
   "name": "auto-social-minh-dien",
-  "version": "0.3.8",
-  "description": "Windows app: app-managed products, media and content -> safe scheduler -> Facebook personal-profile automation",
+  "version": "0.4.0",
+  "description": "Cross-platform desktop app: app-managed products, media and content -> safe scheduler -> Facebook personal-profile automation",
   "main": "dist/main.js",
   "author": "Minh Dien",
   "license": "MIT",
   "scripts": {
     "dev": "npm run build:ts && electron .",
     "build:ts": "tsc",
-    "build": "npm run build:ts && electron-builder --win nsis --publish never",
+    "build": "npm run build:win",
     "check:renderer": "node --check renderer/app.js",
     "test": "npm run build:ts && npm run check:renderer",
-    "start:visible": "npm run build:ts && electron . --show"
+    "start:visible": "npm run build:ts && electron . --show",
+    "build:win": "npm run build:ts && electron-builder --win nsis --publish never",
+    "build:mac": "npm run build:ts && electron-builder --mac --arm64 --x64 --publish never",
+    "build:mac:arm64": "npm run build:ts && electron-builder --mac --arm64 --publish never",
+    "build:mac:x64": "npm run build:ts && electron-builder --mac --x64 --publish never"
   },
   "dependencies": {
     "playwright-core": "^1.55.0"
@@ -45,7 +49,15 @@
     "directories": {
       "output": "release"
     },
-    "npmRebuild": false
+    "npmRebuild": false,
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.business",
+      "artifactName": "Auto-Social-Minh-Dien-${version}-mac-${arch}.${ext}"
+    }
   },
   "engines": {
     "node": ">=24 <25",

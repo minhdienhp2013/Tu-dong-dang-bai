@@ -1,6 +1,6 @@
-# Auto Social Minh Điến — v0.3.8
+# Auto Social Minh Điến — v0.4.0
 
-Ứng dụng Windows desktop để quản lý sản phẩm, ảnh, nội dung và đăng Facebook cá nhân trong **một phần mềm duy nhất**.
+Ứng dụng desktop cho **Windows và macOS** để quản lý sản phẩm, ảnh, nội dung và đăng Facebook cá nhân trong **một phần mềm duy nhất**.
 
 ## Luồng sử dụng
 
@@ -14,7 +14,7 @@ Danh mục trong app
 → Facebook cá nhân
 ```
 
-Không còn yêu cầu người dùng tự tạo thư mục sản phẩm trên Windows.
+Không còn yêu cầu người dùng tự tạo thư mục sản phẩm bên ngoài ứng dụng.
 
 ## Kho ảnh do ứng dụng quản lý
 
@@ -26,7 +26,7 @@ Khi bấm **Thêm ảnh**:
 
 Ảnh đã thêm ở các bản cũ sẽ được tự sao chép vào kho nội bộ khi có thể. Nếu file cũ đã bị xóa trước khi nâng cấp, người dùng cần thêm lại ảnh đó.
 
-Kho nội bộ nằm dưới thư mục dữ liệu của ứng dụng trong Windows userData.
+Kho nội bộ nằm dưới thư mục dữ liệu riêng của Electron (`userData`) trên từng hệ điều hành.
 
 ## Điều kiện để một sản phẩm được chọn đăng
 
@@ -70,7 +70,7 @@ AI chỉ nhận dữ liệu đã nhập trong app:
 
 ## Scheduler
 
-- Dùng giờ local của Windows.
+- Dùng giờ local của hệ điều hành.
 - Có chống chạy trùng theo job key.
 - Có pause/resume.
 - AUTO chỉ retry lỗi mạng, tối đa có giới hạn.
@@ -89,7 +89,8 @@ Không cần:
 
 ## Runtime
 
-- Windows 10/11
+- Windows 10/11 hoặc macOS
+- Apple Silicon M1/M2/M3/M4 và Mac Intel
 - Node.js 24.x để chạy development
 - Electron 38
 - SQLite tích hợp `node:sqlite`
@@ -102,18 +103,55 @@ npm.cmd install
 npm.cmd run dev
 ```
 
-## Build installer
+## Build Windows
 
 ```powershell
-npm.cmd run build
+npm.cmd run build:win
 ```
 
 Kết quả:
 
 ```text
 release/
-  Auto Social Minh Dien Setup 0.3.8.exe
+  Auto Social Minh Dien Setup 0.4.0.exe
 ```
+
+## Build macOS
+
+Trên macOS:
+
+```bash
+npm install
+npm run build:mac
+```
+
+Hoặc chỉ build cho Mac M1/M2/M3/M4:
+
+```bash
+npm run build:mac:arm64
+```
+
+Kết quả trong `release/`:
+
+```text
+Auto-Social-Minh-Dien-0.4.0-mac-arm64.dmg
+Auto-Social-Minh-Dien-0.4.0-mac-arm64.zip
+Auto-Social-Minh-Dien-0.4.0-mac-x64.dmg
+Auto-Social-Minh-Dien-0.4.0-mac-x64.zip
+```
+
+GitHub Actions workflow `.github/workflows/macos-build.yml` cũng tự build các gói này và upload artifact `auto-social-minh-dien-macos`.
+
+### Cài trên Mac
+
+1. Mac M1/M2/M3/M4 chọn file `arm64.dmg`; Mac Intel chọn `x64.dmg`.
+2. Mở DMG và kéo **Auto Social Minh Dien** vào **Applications**.
+3. Lần mở đầu tiên, Control-click ứng dụng → **Open**.
+4. Nếu macOS chặn vì bản CI chưa được Apple notarize, vào **System Settings → Privacy & Security → Open Anyway**.
+5. Cài Google Chrome hoặc Microsoft Edge trước khi dùng chức năng Facebook.
+6. Đăng nhập Facebook thủ công một lần bằng nút trong app, sau đó đóng browser và bấm kiểm tra trạng thái.
+
+Bản CI hiện là **unsigned/not notarized**. Muốn phân phối cho người khác mà không có cảnh báo Gatekeeper cần Apple Developer ID và notarization.
 
 ## Nghiệm thu trước AUTO
 
