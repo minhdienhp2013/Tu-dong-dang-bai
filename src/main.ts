@@ -72,7 +72,7 @@ function createWindow(forceShow = false) {
   win.on('closed', () => { win = null; });
 }
 
-function applyWindowsStartup() {
+function applySystemStartup() {
   const cfg = configStore.load();
   app.setLoginItemSettings({
     openAtLogin: cfg.autoStartWindows,
@@ -242,7 +242,7 @@ async function importCatalog() {
     const restoredStyle = selectedStyle && db.listStyles().find(style => style.name === selectedStyle.name);
     if (restoredStyle) db.setDefaultStyle(restoredStyle.id);
     configStore.save({ ...settings, defaultStyleId: restoredStyle?.id || null, schedulerPaused: true });
-    applyWindowsStartup();
+    applySystemStartup();
     refreshTrayMenu();
     logger.write('CATALOG_IMPORTED', counts);
     return counts;
@@ -698,7 +698,7 @@ function registerIpc() {
       delete incoming.deepseekApiKey;
     }
     const saved = configStore.save(incoming);
-    applyWindowsStartup();
+    applySystemStartup();
     refreshTrayMenu();
     return { ...saved, deepseekApiKey: '', hasDeepseekApiKey: !!saved.deepseekApiKey };
   });
@@ -840,6 +840,9 @@ function registerIpc() {
 
 app.on('second-instance', () => showWindow());
 
+// macOS giữ app sống khi đóng hết cửa sổ. Bấm icon Dock phải mở lại cửa sổ.
+app.on('activate', () => showWindow());
+
 if (gotSingleInstanceLock) {
   app.whenReady().then(() => {
     configStore = new ConfigStore();
@@ -850,7 +853,7 @@ if (gotSingleInstanceLock) {
     const migratedImages = migrateLegacyProductImages();
     db.recoverInterruptedJobs();
     logger.write('APP_START', { version: app.getVersion(), migratedImages });
-    applyWindowsStartup();
+    applySystemStartup();
     createTray();
     registerIpc();
 
