@@ -835,8 +835,32 @@ export async function checkFacebookLogin(profileDir: string): Promise<FacebookLo
   let context: BrowserContext | null = null;
   try {
     context = await launch(profileDir);
-    const page = context.pages()[0] || await context.newPage();
-    await page.goto(FACEBOOK_URLS.personalProfile, { waitUntil: 'domcontentloaded', timeout: 60000 });
+
+    // Chrome trên macOS có thể tạo sẵn một tab about:blank khi mở persistent
+    // profile. Không tái sử dụng tab đó để kiểm tra đăng nhập; luôn tạo tab mới
+    // rồi điều hướng thẳng đến Facebook.
+    const existingPages = context.pages();
+    const page = process.platform === 'darwin'
+      ? await context.newPage()
+      : (existingPages[0] || await context.newPage());
+
+    await page.goto(FACEBOOK_URLS.personalProfile, {
+      waitUntil: 'domcontentloaded',
+      timeout: 60000
+    });
+
+    if (process.platform === 'darwin') {
+      await page.waitForURL(url => url.href !== 'about:blank', { timeout: 15000 });
+
+      // Sau khi trang Facebook đã mở, đóng các tab trắng mặc định để người dùng
+      // không còn nhìn thấy about:blank.
+      for (const candidate of existingPages) {
+        if (candidate !== page && candidate.url() === 'about:blank') {
+          await candidate.close().catch(() => undefined);
+        }
+      }
+    }
+
     await page.waitForTimeout(1500);
 
     if (await detectSecurityGate(page)) return 'needs_check';
