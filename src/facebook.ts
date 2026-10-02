@@ -741,6 +741,38 @@ async function launch(profileDir: string): Promise<BrowserContext> {
   );
 }
 
+async function launchMacStatusContext(profileDir: string): Promise<BrowserContext> {
+  const browser = findInstalledBrowser();
+  if (!browser) {
+    throw new FacebookAutomationError(
+      'UNKNOWN',
+      'Không tìm thấy Google Chrome hoặc Microsoft Edge trên macOS. Hãy cài một trong hai trình duyệt rồi thử lại.'
+    );
+  }
+
+  try {
+    return await chromium.launchPersistentContext(profileDir, {
+      executablePath: browser.executable,
+      headless: true,
+      viewport: null,
+      ignoreDefaultArgs: ['--no-sandbox']
+    });
+  } catch (error) {
+    const detail = String((error as any)?.message || error);
+    if (/user data directory|profile.*in use|processsingleton|singletonlock|browser is already running/i.test(detail)) {
+      throw new FacebookAutomationError(
+        'UNKNOWN',
+        'Hồ sơ Facebook của ứng dụng đang được một cửa sổ Chrome/Edge khác sử dụng. Hãy thoát hẳn trình duyệt rồi kiểm tra lại.'
+      );
+    }
+
+    throw new FacebookAutomationError(
+      classifyUnknownError(detail),
+      'Không thể đọc trạng thái Facebook trên macOS: ' + detail
+    );
+  }
+}
+
 function findInstalledBrowser(): { name: string; executable: string } | null {
   const home = process.env.HOME || '';
 
@@ -834,33 +866,21 @@ export async function openFacebookForLogin(profileDir: string): Promise<void> {
 export async function checkFacebookLogin(profileDir: string): Promise<FacebookLoginStatus> {
   let context: BrowserContext | null = null;
   try {
+    if (process.platform === 'darwin') {
+      // Trên macOS không mở cửa sổ Chrome để kiểm tra trạng thái nữa.
+      // Mở profile ở chế độ headless và đọc cookie phiên Facebook trực tiếp.
+      context = await launchMacStatusContext(profileDir);
+      const cookies = await context.cookies([FACEBOOK_URLS.home]);
+      const userCookie = cookies.find(cookie => cookie.name === 'c_user' && cookie.value);
+      return userCookie ? 'logged_in' : 'logged_out';
+    }
+
     context = await launch(profileDir);
-
-    // Chrome trên macOS có thể tạo sẵn một tab about:blank khi mở persistent
-    // profile. Không tái sử dụng tab đó để kiểm tra đăng nhập; luôn tạo tab mới
-    // rồi điều hướng thẳng đến Facebook.
-    const existingPages = context.pages();
-    const page = process.platform === 'darwin'
-      ? await context.newPage()
-      : (existingPages[0] || await context.newPage());
-
+    const page = context.pages()[0] || await context.newPage();
     await page.goto(FACEBOOK_URLS.personalProfile, {
       waitUntil: 'domcontentloaded',
       timeout: 60000
     });
-
-    if (process.platform === 'darwin') {
-      await page.waitForURL(url => url.href !== 'about:blank', { timeout: 15000 });
-
-      // Sau khi trang Facebook đã mở, đóng các tab trắng mặc định để người dùng
-      // không còn nhìn thấy about:blank.
-      for (const candidate of existingPages) {
-        if (candidate !== page && candidate.url() === 'about:blank') {
-          await candidate.close().catch(() => undefined);
-        }
-      }
-    }
-
     await page.waitForTimeout(1500);
 
     if (await detectSecurityGate(page)) return 'needs_check';
